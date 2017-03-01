@@ -1,5 +1,5 @@
 {
-	"botToken": "",
+	"botToken": "test",
 	"masterCommandPrefix": "!",
 	"ids": {
 		"botId": "189393959577976833",

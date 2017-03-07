@@ -3,7 +3,7 @@ Source of Dirk Bot
 
 
 # Setting up the config file
-If you want to make this bot work, you have to create a file: `/configfiles/config.json`.
+If you want to make this bot to work, you have to create a new file: `/configfiles/config.json`.
 This file should contain the following information:
 
 ```javascript
@@ -57,5 +57,4 @@ This file should contain the following information:
 
 
 # MySQL database
-Here is an empty database file with all the tables required:
-Soon™
+The database file is located in `/configfiles/dirk_database.sql`. To import this database, simply use the following command: `mysql -u username -p database < dirk_database.sql`

@@ -24,7 +24,8 @@ This file should contain the following information:
 		"password": "",
 		"database": "dirkbot"
 	}
-}```
+}
+```
 
 `botToken`: The token of your bot, get a code from here: <https://discordapp.com/developers/applications/me>
 `ids.botId`: The id of the bot user (right mouse on the bot -> Copy ID)

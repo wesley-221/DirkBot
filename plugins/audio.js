@@ -23,7 +23,7 @@ exports.commands = {
 		examples: ["q https://www.youtube.com/watch?v=7Ttv-R5RU6A", "q https://www.youtube.com/watch?v=AKLrKMz-avE"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			var requestUrl, requestUrlID, requestUrlTitle;
 
@@ -92,7 +92,7 @@ exports.commands = {
 		examples: ["play"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 			var botVoiceChannel = discord.servers[context.serverID].members[botId].voice_channel_id;
 			var userVoiceChannel = discord.servers[context.serverID].members[context.userID].voice_channel_id;
 
@@ -192,7 +192,7 @@ exports.commands = {
 		examples: ["removefromqueue 1", "removefromqueue 3"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(!argsm[1]) {
 				amazejs.sendWrong(context.channelID, context.userID,
@@ -276,11 +276,43 @@ exports.commands = {
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
 			var botVoiceChannel = discord.servers[context.serverID].members[botId].voice_channel_id;
+			var assert = require('assert');
 
-			ytSource["server" + serverID].on('data', function() {
-				ytSource["server" + serverID].end();
-				streamRef["server" + serverID].end();
+			ytSource["server" + serverID].on('data', function(x) {
+				ytSource["server" + serverID].destroy();
 			});
+
+
+			// discord.getAudioContext(botVoiceChannel, function(error, stream) {
+			// 	console.log(stream);
+			// });
+			//
+			// streamRef["server" + serverID].on('unpipe', (src) => {
+			// 	console.error('Something has stopped piping into the writer.');
+			// 	assert.equal(src, ytSource["server" + serverID]);
+			//
+			//
+			// 	// console.log(streamRef["server" + serverID]);
+			//
+			// 	discord.getAudioContext(botVoiceChannel, function(error, stream) {
+			// 		console.log(stream);
+			// 	});
+            // });
+
+            // ytSource["server" + serverID].unpipe(streamRef["server" + serverID]);
+
+
+
+			// console.log(ytSource["server" +serverID]);
+			// console.log(streamRef["server" + serverID]);
+			//
+			//
+			// ytSource["server" + serverID].on('data', function() {
+			//
+			// 	ytSource["server" + serverID].end();
+			// 	streamRef["server" + serverID].end();
+			//
+			// });
 
 			// streamRef["server" + serverID].stop();
 			// ytSource["server" + serverID].unpipe(streamRef["server" + serverID]);
@@ -293,7 +325,7 @@ exports.commands = {
 		}
 	},
 	leave: {
-		permission: "admin",
+		permission: "audio.admin",
 		description: "d",
 		usage: "u",
 		examples: ["e"],
@@ -325,7 +357,8 @@ function playQueue(channelID, serverID, botVoiceChannel) {
 				streamRef["server" + serverID] = stream;
 				ytSource["server" + serverID] = youtubeStream(queue["server" + serverID][0][2]);
 				// ytSource["server" + serverID] = ytdl(queue["server" + serverID][0][2]);
-				ytSource["server" + serverID].pipe(streamRef["server" + serverID], {end: false});
+
+				ytSource["server" + serverID].pipe(stream, {end: false});
 
 				// fs.createReadStream('music/haitai.mp3').pipe(stream, {end: false});
 

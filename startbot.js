@@ -9,7 +9,9 @@ var mysql = require("mysql");
 // ======================================
 // Global variables
 // ======================================
-var discord, config, permissions, commands = {};
+var discord, config, pool,
+	permission = {}, commands = {}, blackList = {}, commandPrefix = {}, welcomeServers = {},
+	dynamicCommands = {commands: {}, inline: {}};
 
 console.log();
 console.log("                 ________   ___   ________   ___  __            ________   ________   _________   ");
@@ -26,15 +28,14 @@ console.log();
 // ======================================
 // checkBlacklistChannel() returns true when it's blacklisted and false if it's not
 function checkBlacklistChannel(userID, serverID, channelID, args) {
-	var blacklist = JSON.parse(fs.readFileSync("configfiles/blacklist.json"));
 	args = args.split(" ");
 
-	if(blacklist.hasOwnProperty("server" + serverID) &&
-		args[0] != commandPrefix(serverID) + "enable" && args[0] != commandPrefix(serverID) + "disable" &&
-		args[0] != commandPrefix(serverID) + "enablechannel" && args[0] != commandPrefix(serverID) + "disablechannel" &&
-		userID != config.ids.masterUser) {
-		for(var j in blacklist["server" + serverID].nocommandsinchannel) {
-			if(blacklist["server" + serverID].nocommandsinchannel[j] == channelID)
+	if(blackList.hasOwnProperty("server" + serverID) &&
+		args[0] != getCommandPrefix(serverID) + "enable" && args[0] != getCommandPrefix(serverID) + "disable" &&
+		args[0] != getCommandPrefix(serverID) + "enablechannel" && args[0] != getCommandPrefix(serverID) + "disablechannel" /*&&
+		userID != config.ids.masterUser*/) {
+		for(var j in blackList["server" + serverID].nocommandsinchannel) {
+			if(blackList["server" + serverID].nocommandsinchannel[j] == channelID)
 				return true;
 		}
 	}
@@ -44,12 +45,11 @@ function checkBlacklistChannel(userID, serverID, channelID, args) {
 
 // checkBlacklistCommand() returns true when it's blacklisted and false if it's not
 function checkBlacklistCommand(serverID, args) {
-	var blacklist = JSON.parse(fs.readFileSync("configfiles/blacklist.json"));
 	args = args.split(" ");
 
-	if(blacklist.hasOwnProperty("server" + serverID)) {
-		for(var i in blacklist["server" + serverID].disabledcommands) {
-			if(commandPrefix(serverID) + blacklist["server" + serverID].disabledcommands[i] == args[0])
+	if(blackList.hasOwnProperty("server" + serverID)) {
+		for(var i in blackList["server" + serverID].disabledcommands) {
+			if(getCommandPrefix(serverID) + blackList["server" + serverID].disabledcommands[i] == args[0])
 				return true;
 		}
 	}
@@ -93,7 +93,7 @@ function runCommand(args, context) {
                 });
             }
         } catch (ex) {
-            console.log(localDateString() + " | " + colors.red("[ERROR]") + " Error running command: ", ex);
+            console.log(localDateString() + " | " + colors.red("[ERROR]") + "   Error running command: ", ex);
         }
     }
 }
@@ -107,20 +107,20 @@ function parseCommand(message, context) {
     }
 }
 
-function userHasPermission(userID, channelID, serverID, permission) {
+function userHasPermission(userID, channelID, serverID, permissionToSplit) {
     var userPerms = [];
 
     if (userID) {
-		if(!permissions.hasOwnProperty("server" + serverID)) permissions["server" + serverID] = [];
-		if(!permissions["server" + serverID].hasOwnProperty("user" + userID)) permissions["server" + serverID]["user" + userID] = [];
+		if(!permission.hasOwnProperty("server" + serverID)) permission["server" + serverID] = [];
+		if(!permission["server" + serverID].hasOwnProperty("user" + userID)) permission["server" + serverID]["user" + userID] = [];
 
-		userPerms = userPerms.concat(permissions["server" + serverID]["user" + userID] ? permissions["server" + serverID]["user" + userID] : []);
+		userPerms = userPerms.concat(permission["server" + serverID]["user" + userID] ? permission["server" + serverID]["user" + userID] : []);
 	}
 
-    if (channelID) userPerms = userPerms.concat(permissions["server" + serverID]["channel" + channelID] ? permissions["server" + serverID]["channel" + channelID] : []);
-    if (serverID) userPerms = userPerms.concat(permissions["server" + serverID]["server" + serverID] ? permissions["server" + serverID]["server" + serverID] : []);
-    if (permissions["server" + serverID]["default"]) userPerms = userPerms.concat(permissions["server" + serverID]["default"]);
-    var permParts = permission.split(".");
+    if (channelID) userPerms = userPerms.concat(permission["server" + serverID]["channel" + channelID] ? permission["server" + serverID]["channel" + channelID] : []);
+    if (serverID) userPerms = userPerms.concat(permission["server" + serverID]["server" + serverID] ? permission["server" + serverID]["server" + serverID] : []);
+    if (permission["server" + serverID]["default"]) userPerms = userPerms.concat(permission["server" + serverID]["default"]);
+    var permParts = permissionToSplit.split(".");
 
     for (var i = 0; i < userPerms.length; i++) {
         var negate = false;
@@ -145,25 +145,118 @@ function userHasPermission(userID, channelID, serverID, permission) {
 }
 
 // ==========================================
-// Load permissions and permission functions
+// Load functions
 // ==========================================
+function loadMySQL() {
+	pool = mysql.createPool({
+		connectionLimit 	: 10,
+		host     			: config.MySQL.host,
+		port	 			: config.MySQL.port,
+		user    			: config.MySQL.user,
+		password			: config.MySQL.password,
+		database			: config.MySQL.database,
+		supportBigNumbers 	: true,
+        bigNumberStrings 	: true
+	});
+
+	pool.getConnection(function(err, connection) {
+		if(err)
+			throw localDateString() + " | [ERROR]   Cannot connect to the MySQL database: " + err;
+		else
+			console.log(localDateString() + " | " + colors.green("[CONNECT]") + " Succesfully connected to the MySQL database. ");
+	});
+}
+
 function loadConfig() {
     config = JSON.parse(fs.readFileSync("configfiles/config.json"));
-    console.log(localDateString() + " | " + colors.green("[LOAD]") + " Config loaded!");
+    console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Config file has been loaded!");
 }
 
-exports.reloadPermissions = function() {
-    permissions = JSON.parse(fs.readFileSync("configfiles/permissions.json"));
-    console.log(localDateString() + " | " + colors.green("[LOAD]") + " Permissions reloaded!");
-};
+function loadWelcomeChannels() {
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM welcomeInChannel", function(err, results) {
+			for(var i in results) {
+				if(welcomeServers.hasOwnProperty("server" + results[i].serverID))
+					welcomeServers["server" + results[i].serverID].channelID = results[i].channelID;
+				else {
+					welcomeServers["server" + results[i].serverID] = {};
+					welcomeServers["server" + results[i].serverID].channelID = results[i].channelID;
+				}
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Loaded all the Welcome Channels!");
+			connection.release();
+		});
+	});
+}
+
+function loadCommandPrefix() {
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM commandPrefix", function(err, results) {
+			for(var i in results) {
+				commandPrefix["server" + results[i].serverID] = results[i].commandPrefix;
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Command Prefixes have been loaded!");
+			connection.release();
+		});
+	});
+}
+
 function loadPermissions() {
-    permissions = JSON.parse(fs.readFileSync("configfiles/permissions.json"));
-    console.log(localDateString() + " | " + colors.green("[LOAD]") + " Permissions loaded!");
+	pool.getConnection(function(err, connection) {
+		connection.query('SELECT * FROM permission', function(err, results, fields) {
+			for(var i in results) {
+				if(!permission.hasOwnProperty("server" + results[i].serverID)) {
+					permission["server" + results[i].serverID] = {};
+					permission["server" + results[i].serverID]["user" + results[i].userID] = [];
+					permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+				}
+				else {
+					if(!permission["server" + results[i].serverID].hasOwnProperty("user" + results[i].userID)) {
+						permission["server" + results[i].serverID]["user" + results[i].userID] = [];
+						permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+					}
+					else {
+						permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+					}
+				}
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Permissions have been loaded!");
+			connection.release();
+		});
+	});
 }
 
-// ======================================
-// Plugin functions
-// ======================================
+function loadBlacklist() {
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM blacklist", function(err, results, fields) {
+			for(var i in results) {
+				if(!blackList.hasOwnProperty("server" + results[i].serverID)) {
+					blackList["server" + results[i].serverID] = {"nocommandsinchannel": [], "disabledcommands": []};
+
+					if(results[i].noCmdInChannel != "0")
+						blackList["server" + results[i].serverID].nocommandsinchannel.push(results[i].noCmdInChannel);
+
+					if(results[i].disabledCommand != "N/A")
+						blackList["server" + results[i].serverID].disabledcommands.push(results[i].disabledCommand);
+				}
+				else {
+					if(results[i].noCmdInChannel != "0")
+						blackList["server" + results[i].serverID].nocommandsinchannel.push(results[i].noCmdInChannel);
+
+					if(results[i].disabledCommand != "N/A")
+						blackList["server" + results[i].serverID].disabledcommands.push(results[i].disabledCommand);
+				}
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    The blacklist has been loaded!");
+			connection.release();
+		});
+	});
+}
+
 function loadPlugin(name, configObject) {
     var path = "./plugins/" + name + ".js";
 
@@ -176,9 +269,9 @@ function loadPlugin(name, configObject) {
 
     if (plugin.commands) {
         for (var cmd in plugin.commands) {
-            if (commands[cmd]) throw localDateString() + " | [ERROR] Command " + cmd + " is already defined!";
+            if (commands[cmd]) throw localDateString() + " | [ERROR]   Command " + cmd + " is already defined!";
 
-            if (!plugin.commands[cmd].func) 		throw localDateString() + " | [ERROR] No command function for " + cmd + "!";
+            if (!plugin.commands[cmd].func) 		throw localDateString() + " | [ERROR]   No command function for " + cmd + "!";
             if (!plugin.commands[cmd].permission) 	console.warn(localDateString() + " | " + colors.yellow("[WARNING]") + " The command \"" + cmd + "\" doesn't have any permissions.");
 			if (!plugin.commands[cmd].description) 	console.warn(localDateString() + " | " + colors.yellow("[WARNING]") + " The command \"" + cmd + "\" doesn't have any description.");
 			if (!plugin.commands[cmd].usage) 		console.warn(localDateString() + " | " + colors.yellow("[WARNING]") + " The command \"" + cmd + "\" doesn't have any usage.");
@@ -190,8 +283,137 @@ function loadPlugin(name, configObject) {
         }
     }
 
-    console.log(localDateString() + " | " + colors.green("[LOAD]") + " Loaded " + name + "!");
+    console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Loaded the plugin " + name + "!");
 }
+
+function loadPlugins() {
+    console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Loading plugins...");
+    var i, filename;
+    var pluginFiles = [];
+    var configs = {};
+    fs.readdir("plugins", function(err, files) {
+        if (err) throw localDateString() + " | [ERROR]   Error loading plugins: " + err;
+
+        for (i = 0; i < files.length; i++) {
+            filename = files[i];
+            if (filename && filename[0] != '.') {
+                if (filename.lastIndexOf(".js") == filename.length - 3) {
+                    pluginFiles.push(filename);
+                } else if (filename.lastIndexOf(".config.json") == filename.length - 12) {
+                    configs[filename.substr(0, filename.length - 12)] = JSON.parse(fs.readFileSync("./plugins/" + filename));
+                }
+            }
+        }
+
+        for (i = 0; i < pluginFiles.length; i++) {
+            var pluginName = pluginFiles[i].substr(0, pluginFiles[i].length - 3);
+            if (configs[pluginName]) {
+                loadPlugin(pluginName, configs[pluginName]);
+            } else {
+                loadPlugin(pluginName, {});
+            }
+        }
+    });
+}
+
+function loadDynamicCommands() {
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM commands", function(err, results) {
+			for(var i in results) {
+				if(results[i].typeCommand == "command") {
+					if(dynamicCommands.commands.hasOwnProperty("server" + results[i].serverID)) {
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName] = {commandname: "", message: ""};
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName].commandname = results[i].commandName;
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName].message = results[i].commandMessage;
+					}
+					else {
+						dynamicCommands.commands["server" + results[i].serverID] = {};
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName] = {commandname: "", message: ""};
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName].commandname = results[i].commandName;
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName].message = results[i].commandMessage;
+					}
+				}
+				else if(results[i].typeCommand == "inline") {
+					if(dynamicCommands.inline.hasOwnProperty("server" + results[i].serverID)) {
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName] = {inlinecommand: "", message: ""};
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName].inlinecommand = results[i].commandName;
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName].message = results[i].commandMessage;
+					}
+					else {
+						dynamicCommands.inline["server" + results[i].serverID] = {};
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName] = {inlinecommand: "", message: ""};
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName].inlinecommand = results[i].commandName;
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName].message = results[i].commandMessage;
+					}
+				}
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Dynamic commands have been loaded!");
+			connection.release();
+		});
+	});
+}
+
+// ==========================================
+// Reload functions
+// ==========================================
+exports.reloadPermissions = function() {
+	permission = {};
+
+	pool.getConnection(function(err, connection) {
+		connection.query('SELECT * FROM permission', function(err, results, fields) {
+			for(var i in results) {
+				if(!permission.hasOwnProperty("server" + results[i].serverID)) {
+					permission["server" + results[i].serverID] = {};
+					permission["server" + results[i].serverID]["user" + results[i].userID] = [];
+					permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+				}
+				else {
+					if(!permission["server" + results[i].serverID].hasOwnProperty("user" + results[i].userID)) {
+						permission["server" + results[i].serverID]["user" + results[i].userID] = [];
+						permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+					}
+					else {
+						permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+					}
+				}
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Permissions have been reloaded!");
+			connection.release();
+		});
+	});
+};
+
+exports.reloadBlacklist = function() {
+	blackList = {};
+
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM blacklist", function(err, results, fields) {
+			for(var i in results) {
+				if(!blackList.hasOwnProperty("server" + results[i].serverID)) {
+					blackList["server" + results[i].serverID] = {"nocommandsinchannel": [], "disabledcommands": []};
+
+					if(results[i].noCmdInChannel != "0")
+						blackList["server" + results[i].serverID].nocommandsinchannel.push(results[i].noCmdInChannel);
+
+					if(results[i].disabledCommand != "N/A")
+						blackList["server" + results[i].serverID].disabledcommands.push(results[i].disabledCommand);
+				}
+				else {
+					if(results[i].noCmdInChannel != "0")
+						blackList["server" + results[i].serverID].nocommandsinchannel.push(results[i].noCmdInChannel);
+
+					if(results[i].disabledCommand != "N/A")
+						blackList["server" + results[i].serverID].disabledcommands.push(results[i].disabledCommand);
+				}
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    The blacklist has been reloaded!");
+			connection.release();
+		});
+	});
+};
 
 function reloadPlugin(name, configObject) {
     var path = "./plugins/" + name + ".js";
@@ -204,9 +426,9 @@ function reloadPlugin(name, configObject) {
     }
     if (plugin.commands) {
         for (var cmd in plugin.commands) {
-            if (commands[cmd]) throw localDateString() + " | [ERROR] Command " + cmd + " is already defined!";
+            if (commands[cmd]) throw localDateString() + " | [ERROR]   Command " + cmd + " is already defined!";
 
-            if (!plugin.commands[cmd].func) 		throw localDateString() + " | [ERROR] No command function for " + cmd + "!";
+            if (!plugin.commands[cmd].func) 		throw localDateString() + " | [ERROR]   No command function for " + cmd + "!";
             if (!plugin.commands[cmd].permission) 	console.warn(localDateString() + " | " + colors.yellow("[WARNING]") + " The command \"" + cmd + "\" doesn't have any permissions.");
 			if (!plugin.commands[cmd].description) 	console.warn(localDateString() + " | " + colors.yellow("[WARNING]") + " The command \"" + cmd + "\" doesn't have any description.");
 			if (!plugin.commands[cmd].usage) 		console.warn(localDateString() + " | " + colors.yellow("[WARNING]") + " The command \"" + cmd + "\" doesn't have any usage.");
@@ -218,17 +440,17 @@ function reloadPlugin(name, configObject) {
         }
     }
 
-    console.log(localDateString() + " | " + colors.green("[LOAD]") + " Loaded " + name + "!");
+    console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Reloaded the plugin " + name + "!");
 }
 
 exports.reloadPlugins = function(){
-    console.log(localDateString() + " | " + colors.green("[LOAD]") + " Reloading plugins...");
+    console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Reloading plugins...");
     commands = {};
     var i, filename;
     var pluginFiles = [];
     var configs = {};
     fs.readdir("plugins", function(err, files) {
-        if (err) throw localDateString() + " | [ERROR] Error loading plugins: " + err;
+        if (err) throw localDateString() + " | [ERROR]   Error loading plugins: " + err;
 
         for (i = 0; i < files.length; i++) {
             filename = files[i];
@@ -254,58 +476,97 @@ exports.reloadPlugins = function(){
     });
 };
 
-function loadPlugins() {
-    console.log(localDateString() + " | " + colors.green("[LOAD]") + " Loading plugins...");
-    var i, filename;
-    var pluginFiles = [];
-    var configs = {};
-    fs.readdir("plugins", function(err, files) {
-        if (err) throw localDateString() + " | [ERROR] Error loading plugins: " + err;
+exports.reloadCommandPrefix = function() {
+	commandPrefix = {};
 
-        for (i = 0; i < files.length; i++) {
-            filename = files[i];
-            if (filename && filename[0] != '.') {
-                if (filename.lastIndexOf(".js") == filename.length - 3) {
-                    pluginFiles.push(filename);
-                } else if (filename.lastIndexOf(".config.json") == filename.length - 12) {
-                    configs[filename.substr(0, filename.length - 12)] = JSON.parse(fs.readFileSync("./plugins/" + filename));
-                }
-            }
-        }
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM commandPrefix", function(err, results) {
+			for(var i in results) {
+				commandPrefix["server" + results[i].serverID] = results[i].commandPrefix;
+			}
 
-        for (i = 0; i < pluginFiles.length; i++) {
-            var pluginName = pluginFiles[i].substr(0, pluginFiles[i].length - 3);
-            if (configs[pluginName]) {
-                loadPlugin(pluginName, configs[pluginName]);
-            } else {
-                loadPlugin(pluginName, {});
-            }
-        }
-    });
-}
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Command Prefixes have been reloaded!");
+			connection.release();
+		});
+	});
+};
 
+exports.reloadWelcomeChannels = function() {
+	welcomeServers = {};
+
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM welcomeInChannel", function(err, results) {
+			for(var i in results) {
+				if(welcomeServers.hasOwnProperty("server" + results[i].serverID))
+					welcomeServers["server" + results[i].serverID].channelID = results[i].channelID;
+				else {
+					welcomeServers["server" + results[i].serverID] = {};
+					welcomeServers["server" + results[i].serverID].channelID = results[i].channelID;
+				}
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Reloaded all the Welcome Channels!");
+			connection.release();
+		});
+	});
+};
+
+exports.reloadDynamicCommands = function() {
+	dynamicCommands = {commands: {}, inline: {}};
+
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM commands", function(err, results) {
+			for(var i in results) {
+				if(results[i].typeCommand == "command") {
+					if(dynamicCommands.commands.hasOwnProperty("server" + results[i].serverID)) {
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName] = {commandname: "", message: ""};
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName].commandname = results[i].commandName;
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName].message = results[i].commandMessage;
+					}
+					else {
+						dynamicCommands.commands["server" + results[i].serverID] = {};
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName] = {commandname: "", message: ""};
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName].commandname = results[i].commandName;
+						dynamicCommands.commands["server" + results[i].serverID][results[i].commandName].message = results[i].commandMessage;
+					}
+				}
+				else if(results[i].typeCommand == "inline") {
+					if(dynamicCommands.inline.hasOwnProperty("server" + results[i].serverID)) {
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName] = {inlinecommand: "", message: ""};
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName].inlinecommand = results[i].commandName;
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName].message = results[i].commandMessage;
+					}
+					else {
+						dynamicCommands.inline["server" + results[i].serverID] = {};
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName] = {inlinecommand: "", message: ""};
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName].inlinecommand = results[i].commandName;
+						dynamicCommands.inline["server" + results[i].serverID][results[i].commandName].message = results[i].commandMessage;
+					}
+				}
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Dynamic commands have been reloaded!");
+			connection.release();
+		});
+	});
+};
 // ======================================
 // Exports
 // ======================================
 exports.getMySQLConn = function() {
-	var connection = mysql.createConnection({
-		host     : config.MySQL.host,
-		port	 : config.MySQL.port,
-		user     : config.MySQL.user,
-		password : config.MySQL.password,
-		database : config.MySQL.database
-	});
+	return pool;
+};
 
-	connection.connect(function(err) {
-		if (err) {
-		  console.error('error connecting: ' + err.stack);
-		  return;
-		}
+exports.getBlacklist = function() {
+	return blackList;
+};
 
-		// console.log('Connected as id ' + connection.threadId);
-	});
+exports.getDynamicCommands = function() {
+	return dynamicCommands;
+};
 
-	return connection;
+exports.getPermission = function() {
+	return permission;
 };
 
 exports.getCommands = function() {
@@ -322,7 +583,9 @@ exports.getDiscord = function() {
 
 exports.setGame = function(gamename) {
     discord.setPresence({
-        game: gamename
+        game: {
+			"name" : gamename
+		}
     });
 };
 
@@ -334,11 +597,18 @@ exports.getAxSId = function() {
 	return config.ids.AxSServer;
 };
 
-exports.commandPrefix = function(serverID) {
+exports.getCommandPrefixArray = function() {
+	return commandPrefix;
+};
+
+exports.getWelcomeChannels = function() {
+	return welcomeServers;
+};
+
+// returns a commandPrefix that has been set (if not > default prefix)
+exports.getCommandPrefix = function(serverID) {
 	if(!serverID)
 		return config.masterCommandPrefix;
-
-	var commandPrefix = JSON.parse(fs.readFileSync("configfiles/config.commandprefix.json"));
 
 	if(commandPrefix.hasOwnProperty("server" + serverID)) {
 		return commandPrefix["server" + serverID];
@@ -348,11 +618,9 @@ exports.commandPrefix = function(serverID) {
 	}
 };
 
-function commandPrefix(serverID) {
+function getCommandPrefix(serverID) {
 	if(!serverID)
 		return config.masterCommandPrefix;
-
-	var commandPrefix = JSON.parse(fs.readFileSync("configfiles/config.commandprefix.json"));
 
 	if(commandPrefix.hasOwnProperty("server" + serverID)) {
 		return commandPrefix["server" + serverID];
@@ -389,8 +657,15 @@ function localDateString () {
 // Start the bot
 // ======================================
 loadConfig();
+loadMySQL();
+
+// load extra things below here
 loadPermissions();
 loadPlugins();
+loadBlacklist();
+loadCommandPrefix();
+loadWelcomeChannels();
+loadDynamicCommands();
 
 exports.discord = discord = new Discord.Client({
 	autorun: true,
@@ -405,7 +680,9 @@ discord.on("ready", function() {
     console.log(localDateString() + " | Logged in as %s, connected to %s servers. \n", discord.username, Object.keys(discord.servers).length);
 
 	discord.setPresence({
-        game: "Type !help for help"
+        game: {
+			"name": "Type !help for help"
+		}
     });
 });
 
@@ -430,7 +707,7 @@ discord.on("message", function(username, userID, channelID, message, event) {
 		return;
 	}
 
-	if (message.indexOf(commandPrefix(serverID)) === 0) {
+	if (message.indexOf(getCommandPrefix(serverID)) === 0) {
 		// Check for blacklisted commands
 		if(checkBlacklistChannel(userID, serverID, channelID, message)) {
 			discord.sendMessage({
@@ -459,71 +736,90 @@ discord.on("message", function(username, userID, channelID, message, event) {
 		}
 
 		// Static commands from the various files
-		parseCommand(message.substr(commandPrefix(serverID).length), {
+		parseCommand(message.substr(getCommandPrefix(serverID).length), {
             username: username,
             userID: userID,
             channelID: channelID,
             serverID: serverID
         });
 
-		// Dynamic commands, located in "configfiles/commands.json"
-		var allCommands = JSON.parse(fs.readFileSync("configfiles/commands.json"));
+		if(dynamicCommands.commands.hasOwnProperty("server" + serverID)) {
+			for(var cmd in dynamicCommands.commands["server" + serverID]) {
+				var commandSplit = message.split(" ");
 
-		for(var cmd in allCommands.commands["server" + serverID]) {
-			var commandSplit = message.split(" ");
-			var allcmd = allCommands.commands["server" + serverID];
+				if(commandSplit[0] == getCommandPrefix(serverID) + dynamicCommands.commands["server" + serverID][cmd].commandname) {
+					discord.sendMessage({
+						to: channelID,
+						message: dynamicCommands.commands["server" + serverID][cmd].message
+					});
 
-			if(commandSplit[0] == commandPrefix(serverID) + allcmd[cmd].commandname) {
-				discord.sendMessage({
-                    to: channelID,
-                    message: allcmd[cmd].message
-                });
-
-				console.log(localDateString() + " | [COMMAND] " + username + " (" + userID + " @ " + discord.servers[serverID].name + ") ran [ '" + allcmd[cmd].commandname + "' ]");
-				return;
+					console.log(localDateString() + " | [COMMAND] " + username + " (" + userID + " @ " + discord.servers[serverID].name + ") ran [ '" + dynamicCommands.commands["server" + serverID][cmd].commandname + "' ]");
+					return;
+				}
 			}
 		}
     }
 	else {
-		var allInline = JSON.parse(fs.readFileSync("configfiles/commands.json"));
+		if(dynamicCommands.inline.hasOwnProperty("server" + serverID)) {
+			for(var inl in dynamicCommands.inline["server" + serverID]) {
+				if(message.toLowerCase().includes(dynamicCommands.inline["server" + serverID][inl].commandName)) {
+					var beginPos = message.search(dynamicCommands.inline["server" + serverID][inl].commandName);
+					var endPos = dynamicCommands.inline["server" + serverID][inl].commandName.length + beginPos - 1;
 
-		for(var inl in allInline.inline["server" + serverID]) {
-			var allinl = allInline.inline["server" + serverID];
+					if((message[beginPos - 1] == " " || message[beginPos - 1] === "" || message[beginPos - 1] === undefined) &&
+						(message[endPos + 1] == " " || message[endPos + 1] === "" || message[endPos + 1] === undefined)) {}
+						else
+							return;
 
-			if(message.toLowerCase().includes(allinl[inl].inlinecommand)) {
-				var beginPos = message.search(allinl[inl].inlinecommand);
-				var endPos = allinl[inl].inlinecommand.length + beginPos - 1;
+					discord.sendMessage({
+						to: channelID,
+						message: dynamicCommands.inline["server" + serverID][inl].commandMessage
+					});
 
-				if((message[beginPos - 1] == " " || message[beginPos - 1] === "" || message[beginPos - 1] === undefined) &&
-					(message[endPos + 1] == " " || message[endPos + 1] === "" || message[endPos + 1] === undefined)) {}
-					else
-						return;
-
-				discord.sendMessage({
-					to: channelID,
-					message: allinl[inl].message
-				});
-
-				console.log(localDateString() + " | [COMMAND] " + username + " (" + userID + " @ " + discord.servers[serverID].name + ") ran inline [ '" + allinl[inl].inlinecommand + "' ]");
-				return;
+					console.log(localDateString() + " | [COMMAND] " + username + " (" + userID + " @ " + discord.servers[serverID].name + ") ran inline [ '" + dynamicCommands.inline["server" + serverID][inl].commandName + "' ]");
+					return;
+				}
 			}
 		}
+		pool.getConnection(function(err, connection) {
+			if (err) throw err;
+			connection.query("SELECT * FROM commands WHERE typeCommand = \"inline\" AND serverID = ?", [serverID], function(err, results, fields) {
+				for(var inl in results) {
+					if(message.toLowerCase().includes(results[inl].commandName)) {
+						var beginPos = message.search(results[inl].commandName);
+						var endPos = results[inl].commandName.length + beginPos - 1;
+
+						if((message[beginPos - 1] == " " || message[beginPos - 1] === "" || message[beginPos - 1] === undefined) &&
+							(message[endPos + 1] == " " || message[endPos + 1] === "" || message[endPos + 1] === undefined)) {}
+							else
+								return;
+
+						discord.sendMessage({
+							to: channelID,
+							message: results[inl].commandMessage
+						});
+
+						console.log(localDateString() + " | [COMMAND] " + username + " (" + userID + " @ " + discord.servers[serverID].name + ") ran inline [ '" + results[inl].commandName + "' ]");
+						return;
+					}
+				}
+
+				connection.release();
+			});
+		});
 	}
 });
 
 discord.on("any", function(event) {
 	// User has joined a server
 	if(event.t == "GUILD_MEMBER_ADD") {
-		var welcomeMessage = JSON.parse(fs.readFileSync("configfiles/welcomechannel.json"));
 		for(var i in event.d) {
 			if(event.d[i].hasOwnProperty("id")) {
-				if(welcomeMessage.hasOwnProperty("server" + event.d.guild_id)) {
-					if(welcomeMessage["server" + event.d.guild_id].channelID != "N/A") {
-						discord.sendMessage({
-							to: welcomeMessage["server" + event.d.guild_id].channelID,
-							message: "Welcome <@" + event.d[i].id + ">!"
-						});
-					}
+				if(welcomeServers.hasOwnProperty("server" + event.d.guild_id)) {
+					discord.sendMessage({
+						to: welcomeServers["server" + event.d.guild_id].channelID,
+						message: "Welcome <@" + event.d[i].id + ">!"
+					});
 				}
 
 				console.log(localDateString() + " | [JOIN] Member " + event.d[i].username + " has joined the server: " + discord.servers[event.d.guild_id].name + ". ");

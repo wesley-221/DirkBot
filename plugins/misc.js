@@ -11,6 +11,8 @@ var botId = amazejs.getBotId();
 var AxSServer = amazejs.getAxSId();
 var config = amazejs.getConfig();
 
+var pool = amazejs.getMySQLConn();
+
 var validGameModes = [	["o", "osu", "osu!"],
 						["t", "taiko", "o!t", "osu!taiko"],
 						["c", "ctb", "o!c", "osu!catch", "catch"],
@@ -19,6 +21,38 @@ var validGameModes = [	["o", "osu", "osu!"],
 var defaultGameModeNames = ["osu!", "osu!Taiko", "osu!Catch", "osu!Mania"];
 
 exports.commands = {
+	t: {
+		func: function(argsm, context, reply) {
+			// var permission = {};
+			//
+			// pool.getConnection(function(err, connection) {
+			// 	connection.query('select * from permission', function(err, results, fields) {
+			// 		for(var i in results) {
+			// 			// console.log(results[i].serverID);
+			// 			// console.log(results[i]);
+			// 			if(!permission.hasOwnProperty("server" + results[i].serverID)) {
+			// 				permission["server" + results[i].serverID] = {};
+			// 				permission["server" + results[i].serverID]["user" + results[i].userID] = [];
+			// 				permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+			// 			}
+			// 			else {
+			// 				if(!permission["server" + results[i].serverID].hasOwnProperty("user" + results[i].userID)) {
+			// 					permission["server" + results[i].serverID]["user" + results[i].userID] = [];
+			// 					permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+			// 				}
+			// 				else {
+			// 					permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+			// 				}
+			// 			}
+			// 		}
+			//
+			// 		console.log(permission);
+			//
+			// 		connection.release();
+			// 	});
+			// });
+		}
+	},
 	help: {
 		permission: "default",
 		description: "This is the help command, all commands are listed in here.",
@@ -26,10 +60,10 @@ exports.commands = {
 		examples: ["help", "help patat"],
 		func: function(argsm, context, reply) {
 			var cmdsArr = amazejs.getCommands();
-			var allCommands = JSON.parse(fs.readFileSync("configfiles/commands.json"));
+			var allCommands = amazejs.getDynamicCommands();
 			var serverID = discord.channels[context.channelID].guild_id;
 			var adminCmd = "", miscCmd = "", audioCmd = "", dynamicCmd = "", AxSCmd = "";
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			// give help about a command
 			if(argsm[1]) {
@@ -97,34 +131,48 @@ exports.commands = {
 			}
 		}
 	},
+	time: {
+		permission: "default",
+		description: "This will return the current time in UTC+0",
+		usage: "time",
+		examples: ["time"],
+		func: function(argsm, context, reply) {
+			var currentTime = new Date();
+			console.log(currentTime);
+		}
+	},
 	patat: {
 		permission: "default",
 		description: "With this command you will vote for Patat.",
 		usage: "patat",
 		examples: ["patat"],
 		func: function(argsm, context, reply) {
-			var connection = amazejs.getMySQLConn();
+			var pool = amazejs.getMySQLConn();
 			var serverID = discord.channels[context.channelID].guild_id;
 
-			connection.query("SELECT userID FROM patatOrFriet WHERE userID = ?", [context.userID], function(err, results, fields) {
-				if(err) {
-					console.log(err);
-					console.log(context.userID);
-					connection.end();
-					return;
-				}
-
-				if(results) {
-					if(Object.keys(results).length <= 0) {
-						connection.query('INSERT INTO patatOrFriet VALUES(?, ?, ?, 1, 0)', [context.userID, serverID, context.username], function(err, results, fields) {
-							if(err) {
-								console.log(err);
-								console.log(context.userID);
-							}
-							connection.end();
-						});
+			pool.getConnection(function(err, connection) {
+				if (err) throw err;
+				connection.query("SELECT userID FROM patatOrFriet WHERE userID = ?", [context.userID], function(err, results, fields) {
+					if(err) {
+						console.log(err);
+						console.log(context.userID);
+						connection.release();
+						return;
 					}
-				}
+
+					if(results) {
+						if(Object.keys(results).length <= 0) {
+							connection.query('INSERT INTO patatOrFriet VALUES(?, ?, ?, 1, 0)', [context.userID, serverID, context.username], function(err, results, fields) {
+								if(err) {
+									console.log(err);
+									console.log(context.userID);
+								}
+							});
+						}
+					}
+
+					connection.release();
+				});
 			});
 
 			reply("Patat ligt meer voor de hand dan friet. Er wonen immers meer mensen in de regio's waar in Nederland 'patat' gezegd wordt dan de Nederlandse gebieden waar men 'friet' zegt. in de taal wordt patat bovendien niet alleen langer dan friet, maar ook met meer varianten gebruikt. \n**IT IS PATAT**");
@@ -136,29 +184,31 @@ exports.commands = {
 		usage: "friet",
 		examples: ["friet"],
 		func: function(argsm, context, reply) {
-			var connection = amazejs.getMySQLConn();
+			var pool = amazejs.getMySQLConn();
 			var serverID = discord.channels[context.channelID].guild_id;
 
-			connection.query("SELECT userID FROM patatOrFriet WHERE userID = ?", [context.userID], function(err, results, fields) {
-				if(err) {
-					console.log(err);
-					console.log(context.userID);
-					connection.end();
-					return;
-				}
-
-				if(results) {
-					if(Object.keys(results).length <= 0) {
-						connection.query('INSERT INTO patatOrFriet VALUES(?, ?, ?, 0, 1)', [context.userID, serverID, context.username], function(err, results, fields) {
-							if(err) {
-								console.log(err);
-								console.log(context.userID);
-							}
-
-							connection.end();
-						});
+			pool.getConnection(function(err, connection) {
+				if (err) throw err;
+				connection.query("SELECT userID FROM patatOrFriet WHERE userID = ?", [context.userID], function(err, results, fields) {
+					if(err) {
+						console.log(err);
+						console.log(context.userID);
+						connection.release();
+						return;
 					}
-				}
+
+					if(results) {
+						if(Object.keys(results).length <= 0) {
+							connection.query('INSERT INTO patatOrFriet VALUES(?, ?, ?, 0, 1)', [context.userID, serverID, context.username], function(err, results, fields) {
+								if(err) {
+									console.log(err);
+									console.log(context.userID);
+								}
+							});
+						}
+					}
+					connection.release();
+				});
 			});
 
 			reply("Friet wordt onder de rivier gebruikt. Deze benaming is meer logisch voor het benoemen van gefrituurde aardappelen sinds het staat voor \"gefrituurd\". Daarnaast is dit ook in de Engelse taal de gewoonlijke benoeming (fries) en wordt dit ook gebruikt in dat stinkland Frankrijk zelf (frites). \n**IT IS FRIET**");
@@ -170,29 +220,32 @@ exports.commands = {
 		usage: "patatorfriet",
 		examples: ["patatorfriet"],
 		func: function(argsm, context, reply) {
-			var connection = amazejs.getMySQLConn();
+			var pool = amazejs.getMySQLConn();
 			var finalResult = "n/a";
 			var patatCount = 0;
 			var frietCount = 0;
 
-			connection.query("SELECT sum(patat) AS patatCount, sum(friet) AS frietCount FROM patatOrFriet;", function(err, results, fields) {
-				if(err) console.log(err);
+			pool.getConnection(function(err, connection) {
+				if (err) throw err;
+				connection.query("SELECT sum(patat) AS patatCount, sum(friet) AS frietCount FROM patatOrFriet;", function(err, results, fields) {
+					if(err) console.log(err);
 
-				patatCount = results[0].patatCount;
-				frietCount = results[0].frietCount;
+					patatCount = results[0].patatCount;
+					frietCount = results[0].frietCount;
 
-				if(patatCount > frietCount)
-					finalResult = "Patat is koning";
-				else if(patatCount < frietCount)
-					finalResult = "Friet is koning";
-				else
-					finalResult = "Het is gelijkspel kut";
+					if(patatCount > frietCount)
+						finalResult = "Patat is koning";
+					else if(patatCount < frietCount)
+						finalResult = "Friet is koning";
+					else
+						finalResult = "Het is gelijkspel kut";
 
-				reply("The current score is: \n" +
-						"**Patat**: " + patatCount + "\n" +
-						"**Friet**: " + frietCount + "\n\n**" + finalResult + "**");
+					reply("The current score is: \n" +
+							"**Patat**: " + patatCount + "\n" +
+							"**Friet**: " + frietCount + "\n\n**" + finalResult + "**");
 
-				connection.end();
+					connection.release();
+				});
 			});
 		}
 	},
@@ -202,37 +255,34 @@ exports.commands = {
 		usage: "poflog",
 		examples: ["poflog"],
 		func: function(argsm, context, reply) {
-			var connection = amazejs.getMySQLConn();
+			var pool = amazejs.getMySQLConn();
 			var serverID = discord.channels[context.channelID].guild_id;
 			var finalString = "";
 
-			connection.query("SELECT * FROM patatOrFriet", function(err, results, fields) {
-				if(err) {
-					console.log(err);
-					connection.end();
-					return;
-				}
+			pool.getConnection(function(err, connection) {
+				if (err) throw err;
+				connection.query("SELECT * FROM patatOrFriet", function(err, results, fields) {
+					if(err) {
+						console.log(err);
+						connection.release();
+						return;
+					}
 
-				var foundUser = 0;
+					var foundUser = 0;
 
-				for(var i in results) {
-					if(results[i].patat == 1)
-						patatOrFriet = "patat";
-					else
-						patatOrFriet = "friet";
-					//
-					// if(discord.servers[serverID].members[results[i].userID] == undefined) {
-					// 	console.log("Unknown user `" + results[i].userID + "` voted for " + patatOrFriet);
-					// }
-					// else {
-					// 	console.log(discord.servers[serverID].members[results[i].userID].username + " voted for: " + patatOrFriet);
-					// }
-					finalString += results[i].userName + " voted for " + patatOrFriet + "\n";
-				}
+					for(var i in results) {
+						if(results[i].patat == 1)
+							patatOrFriet = "patat";
+						else
+							patatOrFriet = "friet";
 
-				reply(finalString);
+						finalString += results[i].userName + " voted for " + patatOrFriet + "\n";
+					}
 
-				connection.end();
+					reply(finalString);
+
+					connection.release();
+				});
 			});
 		}
 	},
@@ -256,14 +306,31 @@ exports.commands = {
 					randomNumber = Math.floor((Math.random() * 100) + 1);
 			}
 
-			var settingFile = JSON.parse(fs.readFileSync("configfiles/rollstats.json"));
+			pool.getConnection(function(err, connection) {
+				connection.query("SELECT * FROM rollStats", function(err, results) {
+					if(Object.keys(results) == 0) {
+						connection.query("INSERT INTO rollStats VALUES(?, 1)", [randomNumber]);
+					}
 
-			if(settingFile.hasOwnProperty(randomNumber))
-				settingFile.randomNumber ++;
-			else
-				settingFile[randomNumber] = 1;
+					var insertNew = 0;
+					for(var i in results) {
+						if(results[i].rollAmount == randomNumber) {
+							var newAmount = parseInt(results[i].timesRolled) + 1;
 
-			jsonfile.writeFile("configfiles/rollstats.json", settingFile);
+							connection.query("UPDATE rollStats SET timesRolled = ? WHERE rollAmount = ?", [newAmount, randomNumber]);
+							break;
+						}
+
+						insertNew = 1;
+					}
+
+					if(insertNew == 1) {
+						connection.query("INSERT INTO rollStats VALUES(?, 1)", [randomNumber]);
+					}
+
+					connection.release();
+				});
+			});
 
 			reply("<@" + context.userID + "> rolled " + randomNumber);
 		}
@@ -274,26 +341,21 @@ exports.commands = {
 		usage: "rollstats",
 		examples: ["rollstats"],
 		func: function(argsm, context, reply) {
-			var settingFile = JSON.parse(fs.readFileSync("configfiles/rollstats.json"));
+			pool.getConnection(function(err, connection) {
+				connection.query("SELECT * FROM rollStats ORDER BY timesRolled DESC LIMIT 10", function(err, results) {
+					var finalString = "";
 
-			var values = [];
-			for(var i in settingFile) {
-			   values.push({ key: i, value: settingFile[i] });
-			}
+					for(var j in results) {
+						if(results[j].timesRolled == 1)
+							finalString += "`" + results[j].rollAmount + "` has been rolled `" + results[j].timesRolled + "` time. \n";
+						else
+							finalString += "`" + results[j].rollAmount + "` has been rolled `" + results[j].timesRolled + "` times. \n";
+					}
 
-			values.sort(function(a,b) {return (a.value > b.value) ? 1 : ((b.value > a.value) ? -1 : 0);} );
-			values.reverse();
-
-			var finalString = "";
-
-			for(var j = 0; j < 10; j ++) {
-				if(values[j].value == 1)
-					finalString += "`" + values[j].key + "` has been rolled `" + values[j].value + "` time. \n";
-				else
-					finalString += "`" + values[j].key + "` has been rolled `" + values[j].value + "` times. \n";
-			}
-
-			reply("**The top 10 rolls are:** \n" + finalString);
+					reply("**The top 10 rolls are:** \n" + finalString);
+					connection.release();
+				});
+			});
 		}
 	},
 	setosu: {
@@ -303,8 +365,8 @@ exports.commands = {
 		examples: ["setosu osu Wesley", "setosu ctb - Yuri -", "setosu taiko Sartan", "setosu mania Enchant"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
-			var connection = amazejs.getMySQLConn();
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
+			var pool = amazejs.getMySQLConn();
 
 			var osuAlias 	= validGameModes[0].join(", ");
 			var taikoAlias 	= validGameModes[1].join(", ");
@@ -369,33 +431,29 @@ exports.commands = {
 			getUserJSON(commandParams[1], gameModeCode, function(Json, mode){
 				if(Object.keys(Json).length > 0)
 				{
-					connection.query('SELECT userID FROM osuNames WHERE userID = ?', [context.userID], function(err, results, fields) {
-						if(Object.keys(results).length > 0) {
-							connection.query('UPDATE osuNames SET userName = ?, gameMode = ? WHERE userID = ?', [commandParams[1], gameModeCode, context.userID], function(err, results, fields) {
-								if(err) {
-									console.log(err);
-									console.log(commandParams[1]);
-									console.log(gamemodecode);
-									console.log(context.userID);
-									connection.end();
-									return;
-								}
-								connection.end();
-							});
-						}
-						else {
-							connection.query('INSERT INTO osuNames VALUES(?, ?, ?)', [context.userID, commandParams[1], gameModeCode], function(err, results, fields) {
-								if(err) {
-									console.log(err);
-									console.log(context.userID);
-									console.log(commandParams[1]);
-									console.log(gamemodecode);
-									connection.end();
-									return;
-								}
-								connection.end();
-							});
-						}
+					pool.getConnection(function(err, connection) {
+						connection.query('SELECT userID FROM osuNames WHERE userID = ?', [context.userID], function(err, results, fields) {
+							if(Object.keys(results).length > 0) {
+								connection.query('UPDATE osuNames SET userName = ?, gameMode = ? WHERE userID = ?', [commandParams[1], gameModeCode, context.userID], function(err, results, fields) {
+									if(err) {
+										console.log(err);
+										connection.release();
+										return;
+									}
+									connection.release();
+								});
+							}
+							else {
+								connection.query('INSERT INTO osuNames VALUES(?, ?, ?)', [context.userID, commandParams[1], gameModeCode], function(err, results, fields) {
+									if(err) {
+										console.log(err);
+										connection.release();
+										return;
+									}
+									connection.release();
+								});
+							}
+						});
 					});
 
 					reply("<@" + context.userID + ">, you set your osu! gamemode to `" + defaultGameModeNames[gameModeCode] + "` and username to `" + commandParams[1] + "`");
@@ -418,55 +476,57 @@ exports.commands = {
 		func: function(argsm, context, reply) {
 			var osunames = JSON.parse(fs.readFileSync("configfiles/osuname.json"));
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
-			var connection = amazejs.getMySQLConn();
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
+			var pool = amazejs.getMySQLConn();
 
 			if(!argsm[1]) {
-				connection.query('SELECT userID, userName, gameMode FROM osuNames WHERE userID = ?', [context.userID], function(err, results, fields) {
-					if(err) {
-						console.log(err);
-						connection.end();
-						return;
-					}
+				pool.getConnection(function(err, connection) {
+					connection.query('SELECT userID, userName, gameMode FROM osuNames WHERE userID = ?', [context.userID], function(err, results, fields) {
+						if(err) {
+							console.log(err);
+							connection.release();
+							return;
+						}
 
-					if(Object.keys(results).length > 0) {
-						getUserJSON(results[0].userName, results[0].gameMode, function(Json, mode){
-							for(var i in Json) {
-								discord.sendMessage({
-									to: context.channelID,
-									message: "```" +
-										"\n# Username        : " + Json[i].username +
-										"\n# Mode            : " + defaultGameModeNames[results[0].gameMode] +
-										"\n# Level           : " + parseFloat(Json[i].level).toFixed(2) +
-										"\n# Playcount       : " + addDot(Json[i].playcount) +
-										"\n# Accuracy        : " + parseFloat(Json[i].accuracy).toFixed(2) +
-										"\n# Pp              : " + addDot(Json[i].pp_raw) +
-										"\n# Rank            : " + Json[i].pp_rank +
-										"\n# Country rank    : " + Json[i].pp_country_rank +
-										"```",
-									embed: {
-										title: "Profile of " + Json[i].username,
-										url: "https://osu.ppy.sh/u/" + Json[i].user_id,
-										image: {
-											url: "https://a.ppy.sh/" + Json[i].user_id + "_.jpg",
-											height: 128,
-											width: 128
-										},
-										color: 0x0080FF
-									}
-								});
-							}
-						});
+						if(Object.keys(results).length > 0) {
+							getUserJSON(results[0].userName, results[0].gameMode, function(Json, mode){
+								for(var i in Json) {
+									discord.sendMessage({
+										to: context.channelID,
+										message: "```" +
+											"\n# Username        : " + Json[i].username +
+											"\n# Mode            : " + defaultGameModeNames[results[0].gameMode] +
+											"\n# Level           : " + parseFloat(Json[i].level).toFixed(2) +
+											"\n# Playcount       : " + addDot(Json[i].playcount) +
+											"\n# Accuracy        : " + parseFloat(Json[i].accuracy).toFixed(2) +
+											"\n# Pp              : " + addDot(Json[i].pp_raw) +
+											"\n# Rank            : " + Json[i].pp_rank +
+											"\n# Country rank    : " + Json[i].pp_country_rank +
+											"```",
+										embed: {
+											title: "Profile of " + Json[i].username,
+											url: "https://osu.ppy.sh/u/" + Json[i].user_id,
+											image: {
+												url: "https://a.ppy.sh/" + Json[i].user_id + "_.jpg",
+												height: 128,
+												width: 128
+											},
+											color: 0x0080FF
+										}
+									});
+								}
+							});
 
-						return;
-					}
-					else {
-						amazejs.sendWrong(context.channelID, context.userID,
-							"You haven't set your osu! gamemode and username yet. \nUse `" + commandPrefix + "setosu` `mode` `username` to set your gamemode and username or use `" + commandPrefix + "stats` `mode` `username` to look up anyone.");
-						return;
-					}
+							return;
+						}
+						else {
+							amazejs.sendWrong(context.channelID, context.userID,
+								"You haven't set your osu! gamemode and username yet. \nUse `" + commandPrefix + "setosu` `mode` `username` to set your gamemode and username or use `" + commandPrefix + "stats` `mode` `username` to look up anyone.");
+							return;
+						}
 
-					connection.end();
+						connection.release();
+					});
 				});
 			}
 			else {
@@ -542,56 +602,59 @@ exports.commands = {
 					return;
 				}
 				else {
-					connection.query('SELECT userID, userName, gameMode FROM osuNames WHERE userID = ?', [context.userID], function(err, results, fields) {
-						if(err) {
-							console.log(err);
-							connection.end();
-							return;
-						}
+					pool.getConnection(function(err, connection) {
+						if (err) throw err;
+						connection.query('SELECT userID, userName, gameMode FROM osuNames WHERE userID = ?', [context.userID], function(err, results, fields) {
+							if(err) {
+								console.log(err);
+								connection.release();
+								return;
+							}
 
-						if(Object.keys(results).length > 0) {
-							getUserJSON(results[0].userName, gameModeCode, function(Json, mode) {
-								if(Object.keys(Json).length > 0) {
-									for(var i in Json) {
-										discord.sendMessage({
-											to: context.channelID,
-											message: "```" +
-												"\n# Username        : " + Json[i].username +
-												"\n# Mode            : " + defaultGameModeNames[gameModeCode] +
-												"\n# Level           : " + parseFloat(Json[i].level).toFixed(2) +
-												"\n# Playcount       : " + addDot(Json[i].playcount) +
-												"\n# Accuracy        : " + parseFloat(Json[i].accuracy).toFixed(2) +
-												"\n# Pp              : " + addDot(Json[i].pp_raw) +
-												"\n# Rank            : " + Json[i].pp_rank +
-												"\n# Country rank    : " + Json[i].pp_country_rank +
-												"```",
-											embed: {
-												title: "Profile of " + Json[i].username,
-												url: "https://osu.ppy.sh/u/" + Json[i].user_id,
-												image: {
-													url: "https://a.ppy.sh/" + Json[i].user_id + "_.jpg",
-													height: 128,
-													width: 128
-												},
-												color: 0x0080FF
-											}
-										});
+							if(Object.keys(results).length > 0) {
+								getUserJSON(results[0].userName, gameModeCode, function(Json, mode) {
+									if(Object.keys(Json).length > 0) {
+										for(var i in Json) {
+											discord.sendMessage({
+												to: context.channelID,
+												message: "```" +
+													"\n# Username        : " + Json[i].username +
+													"\n# Mode            : " + defaultGameModeNames[gameModeCode] +
+													"\n# Level           : " + parseFloat(Json[i].level).toFixed(2) +
+													"\n# Playcount       : " + addDot(Json[i].playcount) +
+													"\n# Accuracy        : " + parseFloat(Json[i].accuracy).toFixed(2) +
+													"\n# Pp              : " + addDot(Json[i].pp_raw) +
+													"\n# Rank            : " + Json[i].pp_rank +
+													"\n# Country rank    : " + Json[i].pp_country_rank +
+													"```",
+												embed: {
+													title: "Profile of " + Json[i].username,
+													url: "https://osu.ppy.sh/u/" + Json[i].user_id,
+													image: {
+														url: "https://a.ppy.sh/" + Json[i].user_id + "_.jpg",
+														height: 128,
+														width: 128
+													},
+													color: 0x0080FF
+												}
+											});
+										}
 									}
-								}
-								else {
-									amazejs.sendWrong(context.channelID, context.userID,
-										"This user was not found, this means that the account is either banned or doesn't exist. ");
-									return;
-								}
-							});
-						}
-						else {
-							amazejs.sendWrong(context.channelID, context.userID,
-								"You haven't set your osu! gamemode and username ye so you can't look for just a gamemode. \nUse `" + commandPrefix + "setosu` `mode` `username` to set your gamemode and username or use `" + commandPrefix + "stats` `mode` `username` to look up anyone.");
-							return;
-						}
+									else {
+										amazejs.sendWrong(context.channelID, context.userID,
+											"This user was not found, this means that the account is either banned or doesn't exist. ");
+										return;
+									}
+								});
+							}
+							else {
+								amazejs.sendWrong(context.channelID, context.userID,
+									"You haven't set your osu! gamemode and username ye so you can't look for just a gamemode. \nUse `" + commandPrefix + "setosu` `mode` `username` to set your gamemode and username or use `" + commandPrefix + "stats` `mode` `username` to look up anyone.");
+								return;
+							}
 
-						connection.end();
+							connection.release();
+						});
 					});
 				}
 			}

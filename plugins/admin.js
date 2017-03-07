@@ -6,6 +6,7 @@ var amazejs = require("../startbot.js");
 
 var discord = amazejs.getDiscord();
 var botId = amazejs.getBotId();
+var pool = amazejs.getMySQLConn();
 var dirkRoleName = "Dirken";
 
 var config = exports.config = {};
@@ -84,7 +85,7 @@ exports.commands = {
 				}
 			}
 			else {
-				var commandPrefix = amazejs.commandPrefix(serverID);
+				var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 				discord.sendMessage({
 				    to: context.userID,
@@ -102,8 +103,7 @@ exports.commands = {
 		examples: ["changeprefix !!", "changeprefix |", "changeprefix \\"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
-			var commandPrefixFile = JSON.parse(fs.readFileSync("configfiles/config.commandprefix.json"));
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(!argsm[1] || argsm[1].length > 4) {
 				amazejs.sendWrong(context.channelID, context.userID,
@@ -122,8 +122,32 @@ exports.commands = {
 				return;
 			}
 
-			commandPrefixFile["server" + serverID] = argsm[1];
-			jsonfile.writeFileSync("configfiles/config.commandprefix.json", commandPrefixFile);
+			if(amazejs.getCommandPrefixArray().hasOwnProperty("server" + serverID)) {
+				// update query
+
+				pool.getConnection(function(err, connection){
+					connection.query("UPDATE commandPrefix SET commandPrefix = ? WHERE serverID = ?", [argsm[1], serverID], function(err){
+						connection.release();
+					});
+				});
+
+				amazejs.reloadCommandPrefix();
+				reply("<@" + context.userID + ">, succesfully changed the prefix for this server to `" + argsm[1] + "`.");
+				return;
+			}
+			else {
+				// insert query
+
+				pool.getConnection(function(err, connection){
+					connection.query("INSERT INTO commandPrefix VALUES(?, ?)", [serverID, argsm[1]], function(err){
+						connection.release();
+					});
+				});
+
+				amazejs.reloadCommandPrefix();
+				reply("<@" + context.userID + ">, succesfully changed the prefix for this server to `" + argsm[1] + "`.");
+				return;
+			}
 
 			reply("<@" + context.userID + ">, changed the command prefix to `" + argsm[1] + "`.");
 		}
@@ -135,66 +159,73 @@ exports.commands = {
 		examples: ["addcommand ping pong", "addcommand test This is a test"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
-			allCommands = JSON.parse(fs.readFileSync("configfiles/commands.json"));
-			var allcmd = allCommands.commands["server" + serverID];
+			pool.getConnection(function(err, connection) {
+				if (err) throw err;
+				connection.query("SELECT * FROM commands WHERE typeCommand = \"command\" AND serverID = ?", [serverID], function(err, results, fields) {
+					var commandName, replyMessage, makeCommand;
 
-			if(!argsm[1])
-			{
-				var createdCommands;
-				var first = 0;
+					if(argsm[1]) {
+						var args = argsm[1];
+						args = args.trim().split(" ");
+						makeCommand = 1;
+						commandName = args[0];
+						args.splice(0,1);
+						replyMessage = args.join(' ');
+					}
 
-				for(var i in allCommands.commands["server" + serverID])
-				{
-					if(first === 0)
-						createdCommands = "`" + allcmd[i].commandname + "`";
+					if(!commandName || !replyMessage) {
+						var createdCommands;
+						var first = 0;
+
+						for(var i in results)
+						{
+							if(first === 0)
+								createdCommands = "`" + results[i].commandName + "`";
+							else
+								createdCommands += ", `" + results[i].commandName + "`";
+
+							first = 1;
+						}
+						if(createdCommands === undefined) createdCommands = "none";
+
+						amazejs.sendWrong(context.channelID, context.userID,
+								"Syntax: `" + commandPrefix + "addcommand` `commandname` `reply message`\n" +
+								"`commandname`: The commandname goes here\n" +
+								"`reply message`: The message that the bot will reply when you use this command\n" +
+								"Example: `" + commandPrefix + "addcommand ping pong!`\n\n" +
+								"The following commands have been created already: \n" + createdCommands);
+						return;
+					}
+
+					for(var c in results)
+					{
+						if(makeCommand === 0)
+							break;
+
+						if(results[c].commandName == commandName) makeCommand = 0;
+					}
+
+					if(makeCommand == 1)
+					{
+						connection.query("INSERT INTO commands values(?, ?, \"command\", ?)", [serverID, commandName, replyMessage], function(err, results, fields) {
+							if(err) console.log(err);
+						});
+
+						amazejs.reloadDynamicCommands();
+						reply("<@" + context.userID + ">, succesfully created the command `" + commandPrefix + commandName + "`. ");
+					}
 					else
-						createdCommands += ", `" + allcmd[i].commandname + "`";
+					{
+						reply("<@" + context.userID + ">, the command `" + commandPrefix + commandName + "` already exists. Pick a different commandname.");
+					}
 
-					first = 1;
-				}
+					connection.release();
+				});
+			});
 
-				if(createdCommands === undefined) createdCommands = "none";
-
-				amazejs.sendWrong(context.channelID, context.userID,
-						"Syntax: `" + commandPrefix + "addcommand` `commandname` `reply message`\n" +
-						"`commandname`: The commandname goes here\n" +
-						"`reply message`: The message that the bot will reply when you use this command\n" +
-						"Example: `" + commandPrefix + "addcommand ping pong!`\n\n" +
-						"The following commands have been created already: \n" + createdCommands);
-				return;
-			}
-
-			var args = argsm[1];
-			args = args.trim().split(" ");
-			var makeCommand = 1;
-			var commandName = args[0];
-			args.splice(0,1);
-			var replyMessage = args.join(' ');
-
-			for(var c in allCommands.commands["server" + serverID])
-			{
-				if(makeCommand === 0)
-					break;
-
-				if(allcmd[c].commandname == commandName) makeCommand = 0;
-			}
-
-			if(makeCommand == 1)
-			{
-				if(!allCommands.commands.hasOwnProperty("server" + serverID)) {
-					allCommands.commands["server" + serverID] = JSON.parse("{}");
-				}
-
-				allCommands.commands["server" + serverID][commandName] = {"commandname": commandName, "message": replyMessage};
-				jsonfile.writeFileSync("configfiles/commands.json", allCommands);
-				reply("<@" + context.userID + ">, succesfully created the command `" + commandPrefix + commandName + "`. ");
-			}
-			else
-			{
-				reply("<@" + context.userID + ">, the command `" + commandPrefix + commandName + "` already exists. Pick a different commandname.");
-			}
+			return;
 		}
 	},
 	changecommand: {
@@ -204,64 +235,73 @@ exports.commands = {
 		examples: ["changecommand ping pong", "addcommand test This is no longer a test"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
-			allCommands = JSON.parse(fs.readFileSync("configfiles/commands.json"));
-			var allcmd = allCommands.commands["server" + serverID];
+			pool.getConnection(function(err, connection) {
+				if (err) throw err;
+				connection.query("SELECT * FROM commands WHERE typeCommand = \"command\" AND serverID = ?", [serverID], function(err, results, fields) {
+					var replyMessage, commandName, changeCommand;
 
-			if(!argsm[1])
-			{
-				var createdCommands;
-				var first = 0;
+					if(argsm[1]) {
+						var args = argsm[1];
+						args = args.trim().split(" ");
+						changeCommand = 0;
+						commandName = args[0];
+						args.splice(0,1);
+						replyMessage = args.join(' ');
+					}
 
-				console.log(allCommands.commands["server" + serverID]);
+					if(!commandName || !replyMessage) {
+						var createdCommands;
+						var first = 0;
 
-				for(var i in allCommands.commands["server" + serverID])
-				{
-					if(first === 0)
-						createdCommands = "`" + allcmd[i].commandname + "`";
+						for(var i in results)
+						{
+							if(first === 0)
+								createdCommands = "`" + results[i].commandName + "`";
+							else
+								createdCommands += ", `" + results[i].commandName + "`";
+
+							first = 1;
+						}
+						if(createdCommands === undefined) createdCommands = "none";
+
+						amazejs.sendWrong(context.channelID, context.userID,
+								"Syntax: `" + commandPrefix + "changecommand` `commandname` `reply message`\n" +
+								"`commandname`: The commandname goes here \n" +
+								"`reply message`: The message that the bot will reply when you use this command\n" +
+								"Example: `" + commandPrefix + "addcommand ping no more pong!`\n\n" +
+								"The following commands can be changed: \n" + createdCommands);
+						return;
+					}
+
+					for(var c in results)
+					{
+						if(changeCommand === 1)
+							break;
+
+						if(results[c].commandName == commandName) changeCommand = 1;
+					}
+
+					if(changeCommand == 1)
+					{
+						connection.query("UPDATE commands SET commandMessage = ? WHERE commandName = ? AND serverID = ? AND typeCommand = \"command\"", [replyMessage, commandName, serverID], function(err, results, fields) {
+							if(err) console.log(err);
+						});
+
+						amazejs.reloadDynamicCommands();
+						reply("<@" + context.userID + ">, the command `" + commandName + "` has been changed.");
+					}
 					else
-						createdCommands += ", `" + allcmd[i].commandname + "`";
+					{
+						reply("<@" + context.userID + ">, the command `" + commandName + "` does not exist.");
+					}
 
-					first = 1;
-				}
+					connection.release();
+				});
+			});
 
-				if(createdCommands === undefined) createdCommands = "none";
-
-				amazejs.sendWrong(context.channelID, context.userID,
-						"Syntax: `" + commandPrefix + "changecommand` `commandname` `reply message`\n" +
-						"`commandname`: The commandname goes here \n" +
-						"`reply message`: The message that the bot will reply when you use this command\n" +
-						"Example: `" + commandPrefix + "addcommand ping no more pong!`\n\n" +
-						"The following commands can be changed: \n" + createdCommands);
-				return;
-			}
-
-			var args = argsm[1];
-			args = args.trim().split(" ");
-			var changeCommand = 0;
-			var commandName = args[0];
-			args.splice(0,1);
-			var replyMessage = args.join(' ');
-
-			for(var c in allCommands.commands["server" + serverID])
-			{
-				if(changeCommand === 1)
-					break;
-
-				if(allcmd[c].commandname == commandName) changeCommand = 1;
-			}
-
-			if(changeCommand == 1)
-			{
-				allCommands.commands["server" + serverID][commandName] = {"commandname": commandName, "message": replyMessage};
-				jsonfile.writeFileSync("configfiles/commands.json", allCommands);
-				reply("<@" + context.userID + ">, the command `" + commandName + "` has been changed.");
-			}
-			else
-			{
-				reply("<@" + context.userID + ">, the command `" + commandName + "` does not exist.");
-			}
+			return;
 		}
 	},
 	deletecommand: {
@@ -271,61 +311,70 @@ exports.commands = {
 		examples: ["deletecommand ping", "deletecommand test"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
-			allCommands = JSON.parse(fs.readFileSync("configfiles/commands.json"));
-			var allcmd = allCommands.commands["server" + serverID];
+			pool.getConnection(function(err, connection) {
+				if (err) throw err;
+				connection.query("SELECT * FROM commands WHERE typeCommand = \"command\" AND serverID = ?", [serverID], function(err, results, fields) {
+					if(!argsm[1])
+					{
+						var createdCommands;
+						var first = 0;
 
-			if(!argsm[1])
-			{
-				var createdCommands;
-				var first = 0;
+						for(var i in results)
+						{
+							if(first === 0)
+								createdCommands = "`" + results[i].commandName + "`";
+							else
+								createdCommands += ", `" + results[i].commandName + "`";
 
-				for(var i in allCommands.commands["server" + serverID])
-				{
-					if(first === 0)
-						createdCommands = "`" + allcmd[i].commandname + "`";
+							first = 1;
+						}
+
+						if(createdCommands === undefined) createdCommands = "none";
+
+						amazejs.sendWrong(context.channelID, context.userID,
+								"Syntax: `" + commandPrefix + "deletecommand` `commandname`\n" +
+								"`commandname`: The commandname goes here \n" +
+								"Example: `" + commandPrefix + "deletecommand ping`\n\n" +
+								"The following commands can be deleted: \n" + createdCommands);
+						return;
+					}
+
+					var args = argsm[1];
+					args = args.trim().split(" ");
+					var deleteCommand = 0;
+					var commandName = args[0];
+					args.splice(0,1);
+					var replyMessage = args.join(' ');
+
+					for(var c in results)
+					{
+						if(deleteCommand === 1)
+							break;
+
+						if(results[c].commandName == commandName) deleteCommand = 1;
+					}
+
+					if(deleteCommand == 1)
+					{
+						connection.query("DELETE FROM commands WHERE serverID = ? AND commandName = ? AND typeCommand = \"command\"", [serverID, commandName], function(err, results, fields) {
+							if(err) console.log(err);
+						});
+
+						amazejs.reloadDynamicCommands();
+						reply("<@" + context.userID + ">, the command `" + commandName + "` has been deleted.");
+					}
 					else
-						createdCommands += ", `" + allcmd[i].commandname + "`";
+					{
+						reply("<@" + context.userID + ">, the command `" + commandName + "` does not exist.");
+					}
 
-					first = 1;
-				}
+					connection.release();
+				});
+			});
 
-				if(createdCommands === undefined) createdCommands = "none";
-
-				amazejs.sendWrong(context.channelID, context.userID,
-						"Syntax: `" + commandPrefix + "deletecommand` `commandname`\n" +
-						"`commandname`: The commandname goes here \n" +
-						"Example: `" + commandPrefix + "deletecommand ping`\n\n" +
-						"The following commands can be deleted: \n" + createdCommands);
-				return;
-			}
-
-			var args = argsm[1];
-			args = args.trim().split(" ");
-			var deleteCommand = 0;
-			var commandName = args[0];
-			args.splice(0,1);
-			var replyMessage = args.join(' ');
-
-			for(var c in allCommands.commands["server" + serverID])
-			{
-				if(deleteCommand === 1)
-					break;
-
-				if(allcmd[c].commandname == commandName) deleteCommand = 1;
-			}
-
-			if(deleteCommand == 1)
-			{
-				delete allCommands.commands["server" + serverID][commandName];
-				jsonfile.writeFileSync("configfiles/commands.json", allCommands);
-				reply("<@" + context.userID + ">, the command `" + commandName + "` has been deleted.");
-			}
-			else
-			{
-				reply("<@" + context.userID + ">, the command `" + commandName + "` does not exist.");
-			}
+			return;
 		}
 	},
 	addinline: {
@@ -335,65 +384,75 @@ exports.commands = {
 		examples: ["addinline ping pong", "addinline test This is a test"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
-			allCommands = JSON.parse(fs.readFileSync("configfiles/commands.json"));
-			var allcmd = allCommands.inline["server" + serverID];
+			pool.getConnection(function(err, connection) {
+				if (err) throw err;
+				connection.query("SELECT * FROM commands WHERE typeCommand = \"inline\" AND serverID = ?", [serverID], function(err, results, fields) {
+					var replyMessage, commandName, makeCommand;
 
-			if(!argsm[1])
-			{
-				var createdCommands;
-				var first = 0;
+					if(argsm[1]) {
+						var args = argsm[1];
+						args = args.trim().split(" ");
+						makeCommand = 1;
+						commandName = args[0];
+						args.splice(0,1);
+						replyMessage = args.join(' ');
+					}
 
-				for(var i in allCommands.inline["server" + serverID])
-				{
-					if(first === 0)
-						createdCommands = "`" + allcmd[i].inlinecommand + "`";
+					if(!commandName || !replyMessage)
+					{
+						var createdCommands;
+						var first = 0;
+
+						for(var i in results)
+						{
+							if(first === 0)
+								createdCommands = "`" + results[i].commandName + "`";
+							else
+								createdCommands += ", `" + results[i].commandName + "`";
+
+							first = 1;
+						}
+
+						if(createdCommands === undefined) createdCommands = "none";
+
+						amazejs.sendWrong(context.channelID, context.userID,
+								"Syntax: `" + commandPrefix + "addinline` `inlinecommand` `reply message`\n" +
+								"`inlinecommand`: The text that the user has to type to fire this goes here\n" +
+								"`reply message`: The message that the bot will reply\n" +
+								"Example: `" + commandPrefix + "addinline ping pong!`\n\n" +
+								"The following inlinecommands been created already: \n" + createdCommands);
+						return;
+					}
+
+					for(var c in results)
+					{
+						if(makeCommand === 0)
+							break;
+
+						if(results[c].commandName == commandName) makeCommand = 0;
+					}
+
+					if(makeCommand == 1)
+					{
+						connection.query("INSERT INTO commands VALUES(?, ?, \"inline\", ?)", [serverID, commandName, replyMessage], function(err, results, fields) {
+							if(err) console.log(err);
+						});
+
+						amazejs.reloadDynamicCommands();
+						reply("<@" + context.userID + ">, succesfully created the inlinecommand `" + commandName + "`. ");
+					}
 					else
-						createdCommands += ", `" + allcmd[i].inlinecommand + "`";
+					{
+						reply("<@" + context.userID + ">, the inlinecommand `" + commandName + "` already exists. Pick a different inlinecommand.");
+					}
 
-					first = 1;
-				}
+					connection.release();
+				});
+			});
 
-				if(createdCommands === undefined) createdCommands = "none";
-
-				amazejs.sendWrong(context.channelID, context.userID,
-						"Syntax: `" + commandPrefix + "addinline` `inlinecommand` `reply message`\n" +
-						"`inlinecommand`: The text that the user has to type to fire this goes here\n" +
-						"`reply message`: The message that the bot will reply\n" +
-						"Example: `" + commandPrefix + "addinline ping pong!`\n\n" +
-						"The following inlinecommands been created already: \n" + createdCommands);
-				return;
-			}
-			var args = argsm[1];
-			args = args.trim().split(" ");
-			var makeCommand = 1;
-			var commandName = args[0];
-			args.splice(0,1);
-			var replyMessage = args.join(' ');
-
-			for(var c in allcmd)
-			{
-				if(makeCommand === 0)
-					break;
-
-				if(allcmd[c].inlinecommand == commandName) makeCommand = 0;
-			}
-
-			if(makeCommand == 1)
-			{
-				if(!allCommands.inline.hasOwnProperty("server" + serverID)) {
-					allCommands.inline["server" + serverID] = JSON.parse("{}");
-				}
-
-				allCommands.inline["server" + serverID][commandName] = {"inlinecommand": commandName, "message": replyMessage};
-				jsonfile.writeFileSync("configfiles/commands.json", allCommands);
-				reply("<@" + context.userID + ">, succesfully created the inlinecommand `" + commandName + "`. ");
-			}
-			else
-			{
-				reply("<@" + context.userID + ">, the inlinecommand `" + commandName + "` already exists. Pick a different inlinecommand.");
-			}
+			return;
 		}
 	},
 	changeinline: {
@@ -403,62 +462,73 @@ exports.commands = {
 		examples: ["changeinline ping pong", "changeinline test This is a test"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
-			allCommands = JSON.parse(fs.readFileSync("configfiles/commands.json"));
-			var allcmd = allCommands.inline["server" + serverID];
+			pool.getConnection(function(err, connection) {
+				if (err) throw err;
+				connection.query("SELECT * FROM commands WHERE typeCommand = \"inline\" AND serverID = ?", [serverID], function(err, results, fields) {
+					var replyMessage, commandName, changeCommand;
 
-			if(!argsm[1])
-			{
-				var createdCommands;
-				var first = 0;
+					if(argsm[1]) {
+						var args = argsm[1];
+						args = args.trim().split(" ");
+						changeCommand = 0;
+						commandName = args[0];
+						args.splice(0,1);
+						replyMessage = args.join(' ');
+					}
 
-				for(var i in allCommands.inline["server" + serverID])
-				{
-					if(first === 0)
-						createdCommands = "`" + allcmd[i].inlinecommand + "`";
+					if(!commandName || !replyMessage)
+					{
+						var createdCommands;
+						var first = 0;
+
+						for(var i in results)
+						{
+							if(first === 0)
+								createdCommands = "`" + results[i].commandName + "`";
+							else
+								createdCommands += ", `" + results[i].commandName + "`";
+
+							first = 1;
+						}
+
+						if(createdCommands === undefined) createdCommands = "none";
+
+						amazejs.sendWrong(context.channelID, context.userID,
+								"Syntax: `" + commandPrefix + "changeinline` `inlinecommand` `reply message`\n" +
+								"`inlinecommand`: The text that the user has to type to fire this goes here\n" +
+								"`reply message`: The message that the bot will reply\n" +
+								"Example: `" + commandPrefix + "changeinline ping no more pong!`\n\n" +
+								"The following inlinecommands can be changed: \n" + createdCommands);
+						return;
+					}
+
+					for(var c in results)
+					{
+						if(changeCommand === 1)
+							break;
+
+						if(results[c].commandName == commandName) changeCommand = 1;
+					}
+
+					if(changeCommand == 1)
+					{
+						connection.query("UPDATE commands SET commandMessage = ? WHERE serverID = ? AND commandName = ? AND typeCommand = \"inline\"", [replyMessage, serverID, commandName], function(err, results, fields) {
+							if(err) console.log(err);
+						});
+
+						amazejs.reloadDynamicCommands();
+						reply("<@" + context.userID + ">, the inlinecommand `" + commandName + "` has been changed.");
+					}
 					else
-						createdCommands += ", `" + allcmd[i].inlinecommand + "`";
+					{
+						reply("<@" + context.userID + ">, the inlinecommand `" + commandName + "` does not exist.");
+					}
 
-					first = 1;
-				}
-
-				if(createdCommands === undefined) createdCommands = "none";
-
-				amazejs.sendWrong(context.channelID, context.userID,
-						"Syntax: `" + commandPrefix + "changeinline` `inlinecommand` `reply message`\n" +
-						"`inlinecommand`: The text that the user has to type to fire this goes here\n" +
-						"`reply message`: The message that the bot will reply\n" +
-						"Example: `" + commandPrefix + "changeinline ping no more pong!`\n\n" +
-						"The following inlinecommands can be changed: \n" + createdCommands);
-				return;
-			}
-
-			var args = argsm[1];
-			args = args.trim().split(" ");
-			var changeCommand = 0;
-			var commandName = args[0];
-			args.splice(0,1);
-			var replyMessage = args.join(' ');
-
-			for(var c in allCommands.inline["server" + serverID])
-			{
-				if(changeCommand === 1)
-					break;
-
-				if(allcmd[c].inlinecommand == commandName) changeCommand = 1;
-			}
-
-			if(changeCommand == 1)
-			{
-				allCommands.inline["server" + serverID][commandName] = {"inlinecommand": commandName, "message": replyMessage};
-				jsonfile.writeFileSync("configfiles/commands.json", allCommands);
-				reply("<@" + context.userID + ">, the inlinecommand `" + commandName + "` has been changed.");
-			}
-			else
-			{
-				reply("<@" + context.userID + ">, the inlinecommand `" + commandName + "` does not exist.");
-			}
+					connection.release();
+				});
+			});
 		}
 	},
 	deleteinline: {
@@ -468,61 +538,70 @@ exports.commands = {
 		examples: ["deleteinline ping", "deleteinline test"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
-			allCommands = JSON.parse(fs.readFileSync("configfiles/commands.json"));
-			var allcmd = allCommands.inline["server" + serverID];
+			pool.getConnection(function(err, connection) {
+				if (err) throw err;
+				connection.query("SELECT * FROM commands WHERE typeCommand = \"inline\" AND serverID = ?", [serverID], function(err, results, fields) {
+					if(!argsm[1])
+					{
+						var createdCommands;
+						var first = 0;
 
-			if(!argsm[1])
-			{
-				var createdCommands;
-				var first = 0;
+						for(var i in results)
+						{
+							if(first === 0)
+								createdCommands = "`" + results[i].commandName + "`";
+							else
+								createdCommands += ", `" + results[i].commandName + "`";
 
-				for(var i in allCommands.inline["server" + serverID])
-				{
-					if(first === 0)
-						createdCommands = "`" + allcmd[i].inlinecommand + "`";
+							first = 1;
+						}
+
+						if(createdCommands === undefined) createdCommands = "none";
+
+						amazejs.sendWrong(context.channelID, context.userID,
+								"Syntax: `" + commandPrefix + "deletecommand` `inlinecommand`\n" +
+								"`inlinecommand`: The inlinecommand goes here \n" +
+								"Example: `" + commandPrefix + "deleteinline ping`\n\n" +
+								"The following inlinecommands can be deleted: \n" + createdCommands);
+						return;
+					}
+
+					var args = argsm[1];
+					args = args.trim().split(" ");
+					var deleteCommand = 0;
+					var commandName = args[0];
+					args.splice(0,1);
+					var replyMessage = args.join(' ');
+
+					for(var c in results)
+					{
+						if(deleteCommand === 1)
+							break;
+
+						if(results[c].commandName == commandName) deleteCommand = 1;
+					}
+
+					if(deleteCommand == 1)
+					{
+						connection.query("DELETE FROM commands WHERE serverID = ? AND commandName = ? AND typeCommand = \"inline\"", [serverID, commandName], function(err, results, fields) {
+							if(err) console.log(err);
+						});
+
+						amazejs.reloadDynamicCommands();
+						reply("<@" + context.userID + ">, the inlinecommand `" + commandName + "` has been deleted.");
+					}
 					else
-						createdCommands += ", `" + allcmd[i].inlinecommand + "`";
+					{
+						reply("<@" + context.userID + ">, the inlinecommand `" + commandName + "` does not exist.");
+					}
 
-					first = 1;
-				}
+					connection.release();
+				});
+			});
 
-				if(createdCommands === undefined) createdCommands = "none";
-
-				amazejs.sendWrong(context.channelID, context.userID,
-						"Syntax: `" + commandPrefix + "deletecommand` `inlinecommand`\n" +
-						"`inlinecommand`: The inlinecommand goes here \n" +
-						"Example: `" + commandPrefix + "deleteinline ping`\n\n" +
-						"The following inlinecommands can be deleted: \n" + createdCommands);
-				return;
-			}
-
-			var args = argsm[1];
-			args = args.trim().split(" ");
-			var deleteCommand = 0;
-			var commandName = args[0];
-			args.splice(0,1);
-			var replyMessage = args.join(' ');
-
-			for(var c in allCommands.inline["server" + serverID])
-			{
-				if(deleteCommand === 1)
-					break;
-
-				if(allcmd[c].inlinecommand == commandName) deleteCommand = 1;
-			}
-
-			if(deleteCommand == 1)
-			{
-				delete allCommands.inline["server" + serverID][commandName];
-				jsonfile.writeFileSync("configfiles/commands.json", allCommands);
-				reply("<@" + context.userID + ">, the inlinecommand `" + commandName + "` has been deleted.");
-			}
-			else
-			{
-				reply("<@" + context.userID + ">, the inlinecommand `" + commandName + "` does not exist.");
-			}
+			return;
 		}
 	},
 	permission: {
@@ -532,7 +611,7 @@ exports.commands = {
 		examples: ["permission"],
 		func: function(args, context, reply) {
 			var cmdsArr = amazejs.getCommands();
-			var finalString;
+			var finalString = [];
 			var spacing = 15;
 			var finalStringCount = 0;
 
@@ -544,19 +623,36 @@ exports.commands = {
 				for(i = 0; i <= addspacing; i++)
 					spaces += " ";
 
-				if(finalString[finalStringCount].length >= 1000) {
-					finalString[finalStringCount + 1] += "Command: " + cmd + spaces + " | Permission: " + cmdsArr[cmd].permission + "\n";
+				if(finalString[finalStringCount]) {
+					if(finalString[finalStringCount].length >= 1000) {
+						finalString[finalStringCount] += "Command: " + cmd + spaces + " | Permission: " + cmdsArr[cmd].permission + "\n";
 
-					finalStringCount ++;
+						finalStringCount ++;
+					}
+					else {
+						finalString[finalStringCount] += "Command: " + cmd + spaces + " | Permission: " + cmdsArr[cmd].permission + "\n";
+					}
 				}
 				else {
+					finalString[finalStringCount] = "";
 					finalString[finalStringCount] += "Command: " + cmd + spaces + " | Permission: " + cmdsArr[cmd].permission + "\n";
 				}
 			}
 
-			console.log(finalString);
-
-			// reply("**All commands and permissions (Potentional long list):** \nHeads up: The commands with the prefix `axs` generally can't be used outside of the AxS server. \n" + "```" + finalString + "```");
+			if(finalStringCount > 0) {
+				var curCount = 1;
+				discord.sendMessage({
+					to: context.channelID,
+					message: "**All commands and permissions (Potentional long list):** \nHeads up: The commands with the prefix `axs` generally can't be used outside of the AxS server. \n" + "```" + finalString[0] + "```"
+				}, function(err, response) {
+					for(var j = 1; j < Object.keys(finalString).length; j++) {
+						discord.sendMessage({
+							to: context.channelID,
+							message: "```" + finalString[j] + "```"
+						});
+					}
+				});
+			}
 		}
 	},
 	addperm: {
@@ -566,7 +662,7 @@ exports.commands = {
 		examples: ["addperm @Wesley *", "addperm @Wesley misc.*", "addperm @Wesley misc.stats"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(!argsm[1])
 			{
@@ -601,22 +697,20 @@ exports.commands = {
 				return;
 			}
 
-			var allPermission = JSON.parse(fs.readFileSync("configfiles/permissions.json"));
+			var allPermission = amazejs.getPermission();
 
 			if(!allPermission.hasOwnProperty("server" + serverID)) {
-				// server doesn't exists in permission file
-				allPermission["server" + serverID] = {};
-				allPermission["server" + serverID]["user" + args[0]] = [args[1]];
+				pool.getConnection(function(err, connection) {
+					connection.query("INSERT INTO permission VALUES(?, ?, ?)", [serverID, args[0], args[1]], function(err, results, fields) {
+						connection.release();
+					});
+				});
 
-				jsonfile.writeFileSync("configfiles/permissions.json", allPermission);
 				amazejs.reloadPermissions();
-
 				reply("<@" + context.userID + ">, succesfully added the permission `" + args[1] + "` to <@" + args[0] + ">.");
 				return;
 			}
 			else {
-				// server exists in permission file
-
 				if(allPermission["server" + serverID].hasOwnProperty("user" + args[0])) {
 					// user exists
 					var permissionExist = 0;
@@ -634,8 +728,12 @@ exports.commands = {
 					}
 					else {
 						// permission doesn't exist
-						allPermission["server" + serverID]["user" + args[0]].push(args[1]);
-						jsonfile.writeFileSync("configfiles/permissions.json", allPermission);
+						pool.getConnection(function(err, connection) {
+							connection.query("INSERT INTO permission VALUES(?, ?, ?)", [serverID, args[0], args[1]], function(err, results, fields) {
+								connection.release();
+							});
+						});
+
 						amazejs.reloadPermissions();
 
 						reply("<@" + context.userID + ">, succesfully added the permission `" + args[1] + "` to <@" + args[0] + ">.");
@@ -644,8 +742,11 @@ exports.commands = {
 				}
 				else {
 					// user doesn't exist > permission doesn't exist
-					allPermission["server" + serverID]["user" + args[0]] = [args[1]];
-					jsonfile.writeFileSync("configfiles/permissions.json", allPermission);
+					pool.getConnection(function(err, connection) {
+						connection.query("INSERT INTO permission VALUES(?, ?, ?)", [serverID, args[0], args[1]], function(err, results, fields) {
+							connection.release();
+						});
+					});
 					amazejs.reloadPermissions();
 
 					reply("<@" + context.userID + ">, succesfully added the permission `" + args[1] + "` to <@" + args[0] + ">.");
@@ -661,7 +762,7 @@ exports.commands = {
 		examples: ["removeperm @Wesley *", "removeperm @Wesley misc.*" ,"removeperm @Wesley misc.stats"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(!argsm[1])
 			{
@@ -696,7 +797,7 @@ exports.commands = {
 				return;
 			}
 
-			var allPermission = JSON.parse(fs.readFileSync("configfiles/permissions.json"));
+			var allPermission = amazejs.getPermission();
 			var permissionExist = 0;
 
 			if(allPermission["server" + serverID]["user" + args[0]] !== null ||
@@ -710,13 +811,12 @@ exports.commands = {
 			}
 
 			if(permissionExist) {
-				for(var j = 0; j < allPermission["server" + serverID]["user" + args[0]].length; j ++) {
-					console.log(allPermission["server" + serverID]["user" + args[0]][j]);
-					if(allPermission["server" + serverID]["user" + args[0]][j] == args[1])
-						allPermission["server" + serverID]["user" + args[0]].splice(j, 1);
-				}
+				pool.getConnection(function(err, connection) {
+					connection.query("DELETE FROM permission WHERE serverID = ? AND userID = ? AND permissionName = ?", [serverID, args[0], args[1]], function(err, results, fields) {
+						connection.release();
+					});
+				});
 
-				jsonfile.writeFileSync("configfiles/permissions.json", allPermission);
 				amazejs.reloadPermissions();
 
 				reply("<@" + context.userID + ">, succesfully removed the permission `" + args[1] + "` from <@" + args[0] + ">.");
@@ -735,7 +835,7 @@ exports.commands = {
 		examples: ["disable help", "disable stats"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(!argsm[1]) {
 				amazejs.sendWrong(context.channelID, context.userID,
@@ -745,7 +845,7 @@ exports.commands = {
 				return;
 			}
 
-			var blacklist = JSON.parse(fs.readFileSync("configfiles/blacklist.json"));
+			var blacklist = amazejs.getBlacklist();
 
 			var args = argsm[1];
 			args = args.trim().split(" ");
@@ -755,19 +855,41 @@ exports.commands = {
 				return;
 			}
 
-			if(blacklist.hasOwnProperty("server" + serverID)) {
-				blacklist["server" + serverID].disabledcommands.push(args[0]);
-				jsonfile.writeFileSync("configfiles/blacklist.json", blacklist);
+			var blackListExist = 0;
 
-				reply("<@" + context.userID + ">, succesfully disabled the command `" + args[0] + "` server-wide. ");
+			if(blacklist.hasOwnProperty("server" + serverID)) {
+				for(var i in blacklist["server" + serverID].disabledcommands) {
+					console.log(blacklist["server" + serverID].disabledcommands[i]);
+					if(blacklist["server" + serverID].disabledcommands[i] == args[0]) {
+						blackListExist = 1;
+						break;
+					}
+				}
+
+				if(blackListExist) {
+					reply("<@" + context.userID + ">, the command `" + args[1] + "` has already been disabled.");
+					return;
+				}
+				else {
+					pool.getConnection(function(err, connection) {
+						connection.query("INSERT INTO blacklist VALUES(?, ?, ?)", [serverID, 0, args[0]], function(err, results, fields) {
+							connection.release();
+						});
+					});
+
+					amazejs.reloadBlacklist();
+					reply("<@" + context.userID + ">, succesfully disabled the command `" + args[0] + "` server-wide. ");
+					return;
+				}
 			}
 			else {
-				blacklist["server" + serverID] = {};
-				blacklist["server" + serverID].nocommandsinchannel = [];
-				blacklist["server" + serverID].disabledcommands = [];
-				blacklist["server" + serverID].disabledcommands.push(args[0]);
-				jsonfile.writeFileSync("configfiles/blacklist.json", blacklist);
+				pool.getConnection(function(err, connection) {
+					connection.query("INSERT INTO blacklist VALUES(?, ?, ?)", [serverID, 0, args[0]], function(err, results, fields) {
+						connection.release();
+					});
+				});
 
+				amazejs.reloadBlacklist();
 				reply("<@" + context.userID + ">, succesfully disabled the command `" + args[0] + "` server-wide. ");
 			}
 		}
@@ -779,7 +901,7 @@ exports.commands = {
 		examples: ["enable help", "enable stats"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(!argsm[1])
 			{
@@ -790,26 +912,37 @@ exports.commands = {
 				return;
 			}
 
-			var blacklist = JSON.parse(fs.readFileSync("configfiles/blacklist.json"));
+			var blacklist = amazejs.getBlacklist();
 
 			var args = argsm[1];
 			args = args.trim().split(" ");
+			var deleteCommand = 0;
 
 			if(blacklist.hasOwnProperty("server" + serverID)) {
 				for(var i in blacklist["server" + serverID].disabledcommands) {
 					if(blacklist["server" + serverID].disabledcommands[i] == args[0]) {
-						blacklist["server" + serverID].disabledcommands.splice(i, 1);
-						jsonfile.writeFileSync("configfiles/blacklist.json", blacklist);
-
-						reply("<@" + context.userID + ">, succesfully enabled the command `" + args[0] + "` server-wide. ");
-						return;
+						deleteCommand = 1;
+						break;
 					}
 				}
 
-				reply("<@" + context.userID + ">, the command `" + args[0] + "` isn't disabled on this server. ");
+				if(deleteCommand) {
+					pool.getConnection(function(err, connection) {
+						connection.query("DELETE FROM blacklist WHERE serverID = ? AND noCmdInChannel = 0 AND disabledCommand = ?", [serverID, args[0]], function(err, results, fields) {
+							connection.release();
+						});
+					});
+
+					amazejs.reloadBlacklist();
+					reply("<@" + context.userID + ">, succesfully re-enabled the command `" + args[0] + "` server-wide. ");
+					return;
+				}
+				else {
+					reply("<@" + context.userID + ">, the command `" + args[0] + "` isn't disabled on this server. ");
+				}
 			}
 			else {
-				reply("<@" + context.userID + ">, there are no commands disabled To disable a command, use the command `" + commandPrefix + "disable`.");
+				reply("<@" + context.userID + ">, there are no commands disabled. To disable a command, use the command `" + commandPrefix + "disable`.");
 			}
 		}
 	},
@@ -820,7 +953,7 @@ exports.commands = {
 		examples: ["disable confirm"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(argsm[1] != "confirm")
 			{
@@ -830,22 +963,43 @@ exports.commands = {
 				return;
 			}
 
-			var blacklist = JSON.parse(fs.readFileSync("configfiles/blacklist.json"));
+			var blacklist = amazejs.getBlacklist();
+			var disableChannel = 1;
 
 			if(blacklist.hasOwnProperty("server" + serverID)) {
-				blacklist["server" + serverID].nocommandsinchannel.push(context.channelID);
-				jsonfile.writeFileSync("configfiles/blacklist.json", blacklist);
+				for(var i in blacklist["server" + serverID].nocommandsinchannel) {
+					if(blacklist["server" + serverID].nocommandsinchannel[i] == context.channelID) {
+						disableChannel = 0;
+						break;
+					}
+				}
 
-				reply("<@" + context.userID + ">, succesfully disabled the usage of commands in this channel.");
+				if(disableChannel) {
+					pool.getConnection(function(err, connection) {
+						connection.query("INSERT INTO blacklist VALUES(?, ?, \"N/A\")", [serverID, context.channelID], function(err) {
+							connection.release();
+						});
+					});
+
+					amazejs.reloadBlacklist();
+					reply("<@" + context.userID + ">, succesfully disabled the usage of commands in this channel.");
+					return;
+				}
+				else {
+					reply("<@" + context.userID + ">, the usage of commands is already disabled in this channel.");
+					return;
+				}
 			}
 			else {
-				blacklist["server" + serverID] = {};
-				blacklist["server" + serverID].nocommandsinchannel = [];
-				blacklist["server" + serverID].disabledcommands = [];
-				blacklist["server" + serverID].nocommandsinchannel.push(context.channelID);
-				jsonfile.writeFileSync("configfiles/blacklist.json", blacklist);
+				pool.getConnection(function(err, connection) {
+					connection.query("INSERT INTO blacklist VALUES(?, ?, \"N/A\")", [serverID, context.channelID], function(err) {
+						connection.release();
+					});
+				});
 
+				amazejs.reloadBlacklist();
 				reply("<@" + context.userID + ">, succesfully disabled the usage of commands in this channel.");
+				return;
 			}
 		}
 	},
@@ -856,7 +1010,7 @@ exports.commands = {
 		examples: ["enable channel confirm"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(argsm[1] != "confirm")
 			{
@@ -866,26 +1020,36 @@ exports.commands = {
 				return;
 			}
 
-			var blacklist = JSON.parse(fs.readFileSync("configfiles/blacklist.json"));
-
-			var args = argsm[1];
-			args = args.trim().split(" ");
+			var blacklist = amazejs.getBlacklist();
+			var enableChannel = 0;
 
 			if(blacklist.hasOwnProperty("server" + serverID)) {
 				for(var i in blacklist["server" + serverID].nocommandsinchannel) {
 					if(blacklist["server" + serverID].nocommandsinchannel[i] == context.channelID) {
-						blacklist["server" + serverID].nocommandsinchannel.splice(i, 1);
-						jsonfile.writeFileSync("configfiles/blacklist.json", blacklist);
-
-						reply("<@" + context.userID + ">, succesfully enabled the usage of commands in this channel. ");
-						return;
+						enableChannel = 1;
+						break;
 					}
 				}
 
-				reply("<@" + context.userID + ">, the usage of commands isn't disabled in this channel.");
+				if(enableChannel) {
+					pool.getConnection(function(err, connection) {
+						connection.query("DELETE FROM blacklist WHERE serverID = ? AND noCmdInChannel = ? AND disabledCommand = \"N/A\"", [serverID, context.channelID], function(err) {
+							connection.release();
+						});
+					});
+
+					amazejs.reloadBlacklist();
+					reply("<@" + context.userID + ">, succesfully enabled the usage of commands in this channel. ");
+					return;
+				}
+				else {
+					reply("<@" + context.userID + ">, commands are already allowed to be used in this channel. To disable commands from being used in this channel use `" + commandPrefix + "disablechannel`.");
+					return;
+				}
 			}
 			else {
-				reply("<@" + context.userID + ">, commands are allowed to be used in this channel. To disable commands from being used in this channel use `" + commandPrefix + "disablechannel`.");
+				reply("<@" + context.userID + ">, commands are already allowed to be used in this channel. To disable commands from being used in this channel use `" + commandPrefix + "disablechannel`.");
+				return;
 			}
 		}
 	},
@@ -896,7 +1060,7 @@ exports.commands = {
 		examples: ["welcome confirm"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(argsm[1] != "confirm") {
 				amazejs.sendWrong(context.channelID, context.userID,
@@ -905,23 +1069,29 @@ exports.commands = {
 				return;
 			}
 
-			var welcome = JSON.parse(fs.readFileSync("configfiles/welcomechannel.json"));
+			var welcome = amazejs.getWelcomeChannels();
 
 			if(welcome.hasOwnProperty("server" + serverID)) {
-				welcome["server" + serverID].channelID = context.channelID;
-				jsonfile.writeFileSync("configfiles/welcomechannel.json", welcome);
+				pool.getConnection(function(err, connection) {
+					connection.query("UPDATE welcomeInChannel SET channelID = ? WHERE serverID = ?", [context.channelID, serverID], function(err) {
+						connection.release();
+					});
+				});
 
+				amazejs.reloadWelcomeChannels();
 				reply("<@" + context.userID + ">, a message will now be sent when an user joins this server.");
 				return;
 			}
 			else {
-				welcome["server" + serverID] = {};
-				welcome["server" + serverID].channelid = context.channelID;
-				jsonfile.writeFileSync("configfiles/welcomechannel.json", welcome);
+				pool.getConnection(function(err, connection) {
+					connection.query("INSERT INTO welcomeInChannel(?, ?)", [serverID, context.channelID], function(err) {
+						connection.release();
+					});
+				});
 
+				amazejs.reloadWelcomeChannels();
 				reply("<@" + context.userID + ">, a message will now be sent when an user joins this server.");
 				return;
-
 			}
 		}
 	},
@@ -932,7 +1102,7 @@ exports.commands = {
 		examples: ["nowelcome confirm"],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(argsm[1] != "confirm") {
 				amazejs.sendWrong(context.channelID, context.userID,
@@ -941,12 +1111,16 @@ exports.commands = {
 				return;
 			}
 
-			var welcome = JSON.parse(fs.readFileSync("configfiles/welcomechannel.json"));
+			var welcome = amazejs.getWelcomeChannels();
 
 			if(welcome.hasOwnProperty("server" + serverID)) {
-				welcome["server" + serverID].channelID = "N/A";
-				jsonfile.writeFileSync("configfiles/welcomechannel.json", welcome);
+				pool.getConnection(function(err, connection) {
+					connection.query("DELETE FROM welcomeInChannel WHERE serverID = ?", [serverID], function(err){
+						connection.release();
+					});
+				});
 
+				amazejs.reloadWelcomeChannels();
 				reply("<@" + context.userID + ">, I will no longer send a message when a new user joins.");
 				return;
 			}
@@ -963,7 +1137,7 @@ exports.commands = {
 		examples: ["remindme 1 hour Reminder message", "remindme 2 minutes Reminder message", "remindme 15 hours Reminder message" ],
 		func: function(argsm, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(!argsm[1])
 			{
@@ -1029,7 +1203,7 @@ exports.commands = {
 		examples: ["setname", "setname HI IM WESLEY!"],
 		func: function(args, context, reply) {
 			var serverID = discord.channels[context.channelID].guild_id;
-			var commandPrefix = amazejs.commandPrefix(serverID);
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
 			if(!args[1])
 			{

@@ -163,7 +163,7 @@ function loadMySQL() {
 		if(err)
 			throw localDateString() + " | [ERROR]   Cannot connect to the MySQL database: " + err;
 		else
-			console.log(localDateString() + " | " + colors.green("[CONNECT]") + " Succesfully connected to the MySQL database: " + config.MySQL.database + ". ");
+			console.log(localDateString() + " | " + colors.green("[CONNECT]") + " Succesfully connected to the MySQL database. ");
 	});
 }
 

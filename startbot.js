@@ -687,8 +687,7 @@ discord.on("ready", function() {
 });
 
 discord.on("message", function(username, userID, channelID, message, event) {
-	// log "event.d.channel_id", then pm the bot user and copy that channel_id down here
-	if(event.d.channel_id == "278160895949930497")
+	if (channelID in discord.directMessages)
 		return;
 
 	var serverID = discord.channels[channelID].guild_id;

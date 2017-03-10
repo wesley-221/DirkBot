@@ -4,6 +4,7 @@ var fs = require("fs");
 var jsonfile = require('jsonfile');
 var amazejs = require('../startbot.js');
 var request = require("request");
+var async = require('async');
 
 var discord = amazejs.getDiscord();
 var botId = amazejs.getBotId();
@@ -103,7 +104,6 @@ exports.commands = {
 
 							if(mappool[stage][mod][i].difficulty.length > diffNameBiggestLength)
 								diffNameBiggestLength = mappool[stage][mod][i].difficulty.length;
-
 						}
 
 						for(var i = 0; i < mapNameBiggestLength - "Mapname".length; i ++)
@@ -143,44 +143,17 @@ exports.commands = {
 						modMessage[mod.toLowerCase()] = tempString;
 					}
 
-					discord.sendMessage({
-						to: context.channelID,
-						message: "```md\n" + modMessage.nomod + "```"
-					}, function(err, response) {
-						setTimeout(function(){
+					var times = 0;
+					async.each(modMessage, function(message, callback) {
+						setTimeout(function() {
 							discord.sendMessage({
 								to: context.channelID,
-								message: "```md\n" + modMessage.hidden + "```"
-							}, function(err, response) {
-								setTimeout(function(){
-									discord.sendMessage({
-										to: context.channelID,
-										message: "```md\n" + modMessage.hardrock + "```"
-									}, function(err, response){
-										setTimeout(function(){
-											discord.sendMessage({
-												to: context.channelID,
-												message: "```md\n" + modMessage.doubletime + "```"
-											}, function(err, response) {
-												setTimeout(function(){
-													discord.sendMessage({
-														to: context.channelID,
-														message: "```md\n" + modMessage.freemod + "```"
-													}, function(err, response) {
-														setTimeout(function(){
-															discord.sendMessage({
-																to: context.channelID,
-																message: "```md\n" + modMessage.tiebreaker + "```"
-															});
-														}, 1000);
-													});
-												}, 1000);
-											});
-										}, 1000);
-									});
-								}, 1000);
+								message: "```md\n" + message + "```"
 							});
-						}, 1000);
+						}, 1000 * times);
+
+						times++;
+						callback();
 					});
 				}
 			}
@@ -225,7 +198,42 @@ exports.commands = {
 			}
 			else {
 				if(splittedArgs[0].match(/^(https|http):\/\/osu.ppy.sh\/mp\/\d+$|^\d+$/)) {
-					reply("JAJA");
+					pool.getConnection(function(err, connection) {
+						connection.query("SELECT * FROM calcUserData", function(err, results) {
+							if(Object.keys(results).length > 0) {
+								var updateData = 0;
+								for(var result in results) {
+									if(results[result].userID == context.userID) {
+										updateData = 1;
+										break;
+									}
+								}
+
+								if(updateData == 1) {
+									connection.query("UPDATE calcUserData SET mpLink = ?, t1Name = ?, t2Name = ? WHERE userID = ?", [splittedArgs[0], splittedArgs[1], splittedArgs[2], context.userID], function(err) {
+										if(err) console.log(err);
+									});
+								}
+								else {
+									connection.query("INSERT INTO calcUserData VALUES(?, ?, ?, ?)", [context.userID, splittedArgs[0], splittedArgs[1], splittedArgs[2]], function(err) {
+										if(err) console.log(err);
+									});
+								}
+							}
+							else {
+								connection.query("INSERT INTO calcUserData VALUES(?, ?, ?, ?)", [context.userID, splittedArgs[0], splittedArgs[1], splittedArgs[2]], function(err) {
+									if(err) console.log(err);
+								});
+							}
+
+							reply("<@" + context.userID + ">, succesfully set your data: \n" +
+								"Multiplayer room ID: `" + splittedArgs[0] + "`\n" +
+								"Team 1 name: `" + splittedArgs[1] + "`\n" +
+								"Team 2 name: `" + splittedArgs[2] + "`");
+
+							connection.release();
+						});
+					});
 				}
 				else {
 					amazejs.sendWrong(context.channelID, context.userID,

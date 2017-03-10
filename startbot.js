@@ -5,13 +5,57 @@ var Discord = require("discord.io");
 var fs = require("fs");
 var colors = require("colors");
 var mysql = require("mysql");
+var GoogleSpreadSheet = require('google-spreadsheet');
+var async = require('async');
 
 // ======================================
 // Global variables
 // ======================================
-var discord, config, pool,
+var discord, config, pool, mappoolID,
 	permission = {}, commands = {}, blackList = {}, commandPrefix = {}, welcomeServers = {},
-	dynamicCommands = {commands: {}, inline: {}};
+	dynamicCommands = {commands: {}, inline: {}},
+	mappoolData = {
+		'groupstage': {
+			'NoMod': [],
+			'Hidden': [],
+			'HardRock': [],
+			'DoubleTime': [],
+			'FreeMod': [],
+			'TieBreaker': []
+		},
+		'roundof8': {
+			'NoMod': [],
+			'Hidden': [],
+			'HardRock': [],
+			'DoubleTime': [],
+			'FreeMod': [],
+			'TieBreaker': []
+		},
+		'quarterfinals': {
+			'NoMod': [],
+			'Hidden': [],
+			'HardRock': [],
+			'DoubleTime': [],
+			'FreeMod': [],
+			'TieBreaker': []
+		},
+		'semifinals': {
+			'NoMod': [],
+			'Hidden': [],
+			'HardRock': [],
+			'DoubleTime': [],
+			'FreeMod': [],
+			'TieBreaker': []
+		},
+		'finals': {
+			'NoMod': [],
+			'Hidden': [],
+			'HardRock': [],
+			'DoubleTime': [],
+			'FreeMod': [],
+			'TieBreaker': []
+		}
+	};
 
 console.log();
 console.log("                 ________   ___   ________   ___  __            ________   ________   _________   ");
@@ -354,6 +398,204 @@ function loadDynamicCommands() {
 	});
 }
 
+function loadMappool() {
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM spreadsheetID", function(err, results) {
+			if(err) console.log(err);
+
+			for(var i in results) {
+				mappoolID = results[i].spreadsheetID;
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Succesfully loaded the mappoolID: " + mappoolID + "!");
+
+			var doc = new GoogleSpreadSheet(mappoolID),
+				simpleTitle = [],
+				showOnce = 0,
+				ignoreRows = [1, 2, 3, 10, 11, 16, 17, 22, 23, 28, 29, 34, 35],
+				noModRows = [4, 5, 6, 7, 8, 9],
+				hiddenRows = [12, 13, 14, 15],
+				hardRockRows = [18, 19, 20, 21],
+				doubleTimeRows = [24, 25, 26, 27],
+				freeModRows = [30, 31, 32, 33],
+				tiebreakerRow = [36];
+
+			doc.getInfo(function(err, info) {
+				async.each(info.worksheets, function(sheet, callback) {
+					var tempArrayNoMod 		= {'map': '', 'difficulty': '', 'modifier': ''},
+						tempArrayHidden 	= {'map': '', 'difficulty': '', 'modifier': ''},
+						tempArrayHardRock 	= {'map': '', 'difficulty': '', 'modifier': ''},
+						tempArrayDoubleTime = {'map': '', 'difficulty': '', 'modifier': ''},
+						tempArrayFreeMod 	= {'map': '', 'difficulty': '', 'modifier': ''},
+						tempArrayTiebreaker = {'map': '', 'difficulty': '', 'modifier': ''};
+
+					sheet.getCells({
+						'min-row': 1,
+						'return-empty': false
+					}, function(err, cells) {
+						async.each(cells, function(cell, step) {
+							// ===================
+							// Begin NoMod maps =
+							// ===================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (noModRows.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayNoMod.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayNoMod.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayNoMod.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayNoMod.map === '' || tempArrayNoMod.difficulty === '' || tempArrayNoMod.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].NoMod.push(tempArrayNoMod);
+									tempArrayNoMod = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							// ===================
+							// Begin Hidden maps =
+							// ===================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (hiddenRows.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayHidden.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayHidden.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayHidden.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayHidden.map === '' || tempArrayHidden.difficulty === '' || tempArrayHidden.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].Hidden.push(tempArrayHidden);
+									tempArrayHidden = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							// =====================
+							// Begin HardRock maps =
+							// =====================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (hardRockRows.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayHardRock.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayHardRock.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayHardRock.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayHardRock.map === '' || tempArrayHardRock.difficulty === '' || tempArrayHardRock.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].HardRock.push(tempArrayHardRock);
+									tempArrayHardRock = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							// =======================
+							// Begin DoubleTime maps =
+							// =======================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (doubleTimeRows.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayDoubleTime.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayDoubleTime.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayDoubleTime.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayDoubleTime.map === '' || tempArrayDoubleTime.difficulty === '' || tempArrayDoubleTime.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].DoubleTime.push(tempArrayDoubleTime);
+									tempArrayDoubleTime = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							// ====================
+							// Begin FreeMod maps =
+							// ====================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (freeModRows.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayFreeMod.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayFreeMod.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayFreeMod.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayFreeMod.map === '' || tempArrayFreeMod.difficulty === '' || tempArrayFreeMod.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].FreeMod.push(tempArrayFreeMod);
+									tempArrayFreeMod = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							// ======================
+							// Begin TieBreaker map =
+							// ======================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (tiebreakerRow.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayTiebreaker.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayTiebreaker.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayTiebreaker.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayTiebreaker.map === '' || tempArrayTiebreaker.difficulty === '' || tempArrayTiebreaker.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].TieBreaker.push(tempArrayTiebreaker);
+									tempArrayTiebreaker = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							step();
+						}, function(err) {
+							if(err) {
+								console.log(err);
+							}
+						});
+					});
+
+					callback();
+				}, function(err) {
+					if(err) {
+						console.log(err);
+					}
+					else {
+						console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Succesfully loaded the mappool with the id: " + mappoolID + "!");
+					}
+				});
+			});
+
+			connection.release();
+		});
+	});
+}
+
 // ==========================================
 // Reload functions
 // ==========================================
@@ -550,6 +792,204 @@ exports.reloadDynamicCommands = function() {
 		});
 	});
 };
+
+exports.reloadMappool = function(){
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM spreadsheetID", function(err, results) {
+			if(err) console.log(err);
+
+			for(var i in results) {
+				mappoolID = results[i].spreadsheetID;
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Succesfully loaded the mappoolID: " + mappoolID + "!");
+
+			var doc = new GoogleSpreadSheet(mappoolID),
+				simpleTitle = [],
+				showOnce = 0,
+				ignoreRows = [1, 2, 3, 10, 11, 16, 17, 22, 23, 28, 29, 34, 35],
+				noModRows = [4, 5, 6, 7, 8, 9],
+				hiddenRows = [12, 13, 14, 15],
+				hardRockRows = [18, 19, 20, 21],
+				doubleTimeRows = [24, 25, 26, 27],
+				freeModRows = [30, 31, 32, 33],
+				tiebreakerRow = [36];
+
+			doc.getInfo(function(err, info) {
+				async.each(info.worksheets, function(sheet, callback) {
+					var tempArrayNoMod 		= {'map': '', 'difficulty': '', 'modifier': ''},
+						tempArrayHidden 	= {'map': '', 'difficulty': '', 'modifier': ''},
+						tempArrayHardRock 	= {'map': '', 'difficulty': '', 'modifier': ''},
+						tempArrayDoubleTime = {'map': '', 'difficulty': '', 'modifier': ''},
+						tempArrayFreeMod 	= {'map': '', 'difficulty': '', 'modifier': ''},
+						tempArrayTiebreaker = {'map': '', 'difficulty': '', 'modifier': ''};
+
+					sheet.getCells({
+						'min-row': 1,
+						'return-empty': false
+					}, function(err, cells) {
+						async.each(cells, function(cell, step) {
+							// ===================
+							// Begin NoMod maps =
+							// ===================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (noModRows.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayNoMod.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayNoMod.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayNoMod.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayNoMod.map === '' || tempArrayNoMod.difficulty === '' || tempArrayNoMod.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].NoMod.push(tempArrayNoMod);
+									tempArrayNoMod = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							// ===================
+							// Begin Hidden maps =
+							// ===================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (hiddenRows.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayHidden.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayHidden.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayHidden.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayHidden.map === '' || tempArrayHidden.difficulty === '' || tempArrayHidden.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].Hidden.push(tempArrayHidden);
+									tempArrayHidden = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							// =====================
+							// Begin HardRock maps =
+							// =====================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (hardRockRows.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayHardRock.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayHardRock.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayHardRock.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayHardRock.map === '' || tempArrayHardRock.difficulty === '' || tempArrayHardRock.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].HardRock.push(tempArrayHardRock);
+									tempArrayHardRock = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							// =======================
+							// Begin DoubleTime maps =
+							// =======================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (doubleTimeRows.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayDoubleTime.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayDoubleTime.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayDoubleTime.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayDoubleTime.map === '' || tempArrayDoubleTime.difficulty === '' || tempArrayDoubleTime.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].DoubleTime.push(tempArrayDoubleTime);
+									tempArrayDoubleTime = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							// ====================
+							// Begin FreeMod maps =
+							// ====================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (freeModRows.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayFreeMod.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayFreeMod.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayFreeMod.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayFreeMod.map === '' || tempArrayFreeMod.difficulty === '' || tempArrayFreeMod.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].FreeMod.push(tempArrayFreeMod);
+									tempArrayFreeMod = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							// ======================
+							// Begin TieBreaker map =
+							// ======================
+							if (ignoreRows.indexOf(cell.row) === -1) {
+								if (tiebreakerRow.indexOf(cell.row) >= 0) {
+									if(cell.col == 1) {
+										tempArrayTiebreaker.map = cell.value;
+									}
+									else if(cell.col == 2) {
+										tempArrayTiebreaker.difficulty = cell.value;
+									}
+									else if(cell.col == 3) {
+										tempArrayTiebreaker.modifier = cell.value;
+									}
+								}
+
+								if(tempArrayTiebreaker.map === '' || tempArrayTiebreaker.difficulty === '' || tempArrayTiebreaker.modifier === '') {}
+								else {
+									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].TieBreaker.push(tempArrayTiebreaker);
+									tempArrayTiebreaker = {'map': '', 'difficulty': '', 'modifier': ''};
+								}
+							}
+
+							step();
+						}, function(err) {
+							if(err) {
+								console.log(err);
+							}
+						});
+					});
+
+					callback();
+				}, function(err) {
+					if(err) {
+						console.log(err);
+					}
+					else {
+						console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Succesfully loaded the mappool with the id: " + mappoolID + "!");
+					}
+				});
+			});
+
+			connection.release();
+		});
+	});
+};
 // ======================================
 // Exports
 // ======================================
@@ -579,6 +1019,10 @@ exports.getConfig = function() {
 
 exports.getDiscord = function() {
 	return discord;
+};
+
+exports.getMappool = function() {
+	return mappoolData;
 };
 
 exports.setGame = function(gamename) {
@@ -666,25 +1110,31 @@ loadBlacklist();
 loadCommandPrefix();
 loadWelcomeChannels();
 loadDynamicCommands();
+loadMappool();
+
 
 exports.discord = discord = new Discord.Client({
 	autorun: true,
     token: config.botToken
 });
 
+
 discord.on("ready", function() {
-	for(var i in discord.servers) {
-		console.log(localDateString() + " | " + colors.green("[CONNECT]") + " Connected to the server: %s", discord.servers[i].name);
-	}
-
-    console.log(localDateString() + " | Logged in as %s, connected to %s servers. \n", discord.username, Object.keys(discord.servers).length);
-
-	discord.setPresence({
-        game: {
-			"name": "Type !help for help"
+	setTimeout(function() {
+		for(var i in discord.servers) {
+			console.log(localDateString() + " | " + colors.green("[CONNECT]") + " Connected to the server: %s", discord.servers[i].name);
 		}
-    });
+
+	    console.log(localDateString() + " | Logged in as %s, connected to %s servers. \n", discord.username, Object.keys(discord.servers).length);
+
+		discord.setPresence({
+	        game: {
+				"name": "Type !help for help"
+			}
+	    });
+	}, 3000);
 });
+
 
 discord.on("message", function(username, userID, channelID, message, event) {
 	if (channelID in discord.directMessages)

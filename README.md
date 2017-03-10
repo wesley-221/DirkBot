@@ -57,4 +57,4 @@ This file should contain the following information:
 
 
 # MySQL database
-The database file is located in `/configfiles/dirk_database.sql`. To import this database, simply use the following command: `mysql -u username -p database < dirk_database.sql`
+The database file is located in `/configfiles/dirk_database.sql`. To import this database, simply use the following command: `mysql -u username -p database < dirk_database.sql`.

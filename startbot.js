@@ -1084,17 +1084,19 @@ exports.sendWrong = function(channelID, user, message) {
 };
 
 exports.localDateString = function() {
-	var curTime = new Date().getTime();
-	curTime = new Date(curTime).toLocaleTimeString();
+	var dateObject = new Date(),
+		curDate = dateObject.toLocaleDateString(),
+		curTime = dateObject.toLocaleTimeString();
 
-	return curTime;
+	return curDate + " - " + curTime;
 };
 
 function localDateString () {
-	var curTime = new Date().getTime();
-	curTime = new Date(curTime).toLocaleTimeString();
+	var dateObject = new Date(),
+		curDate = dateObject.toLocaleDateString(),
+		curTime = dateObject.toLocaleTimeString();
 
-	return curTime;
+	return curDate + " - " + curTime;
 }
 
 // ======================================
@@ -1132,7 +1134,7 @@ discord.on("ready", function() {
 				"name": "Type !help for help"
 			}
 	    });
-	}, 3000);
+	}, 1000);
 });
 
 

@@ -21,38 +21,6 @@ var validGameModes = [	["o", "osu", "osu!"],
 var defaultGameModeNames = ["osu!", "osu!Taiko", "osu!Catch", "osu!Mania"];
 
 exports.commands = {
-	t: {
-		func: function(argsm, context, reply) {
-			// var permission = {};
-			//
-			// pool.getConnection(function(err, connection) {
-			// 	connection.query('select * from permission', function(err, results, fields) {
-			// 		for(var i in results) {
-			// 			// console.log(results[i].serverID);
-			// 			// console.log(results[i]);
-			// 			if(!permission.hasOwnProperty("server" + results[i].serverID)) {
-			// 				permission["server" + results[i].serverID] = {};
-			// 				permission["server" + results[i].serverID]["user" + results[i].userID] = [];
-			// 				permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
-			// 			}
-			// 			else {
-			// 				if(!permission["server" + results[i].serverID].hasOwnProperty("user" + results[i].userID)) {
-			// 					permission["server" + results[i].serverID]["user" + results[i].userID] = [];
-			// 					permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
-			// 				}
-			// 				else {
-			// 					permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
-			// 				}
-			// 			}
-			// 		}
-			//
-			// 		console.log(permission);
-			//
-			// 		connection.release();
-			// 	});
-			// });
-		}
-	},
 	help: {
 		permission: "default",
 		description: "This is the help command, all commands are listed in here.",

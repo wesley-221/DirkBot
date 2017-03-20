@@ -253,12 +253,216 @@ exports.commands = {
 		usage: "calculate",
 		examples: ["calculate"],
 	    func: function(argsm, context, reply) {
+			var serverID = discord.channels[context.channelID].guild_id;
+			var commandPrefix = amazejs.getCommandPrefix(serverID);
 
+			pool.getConnection(function(err, connection) {
+				if(err) console.log(err);
+
+				connection.query("SELECT * FROM calcUserData WHERE userID = ?", [context.userID], function(err, results) {
+					if(err) console.log(err);
+
+					if(Object.keys(results).length > 0) {
+						var times = 1;
+
+						// getMatchJSON(results[0].mpLink, function(multi) {
+							var multi = JSON.parse(fs.readFileSync("configfiles/testdata/data1.json"));
+
+							if(multi.match === 0) {
+								amazejs.sendWrong(context.channelID, context.userID,
+									"The multiplayer match `https://osu.ppy.sh/mp/" + results[0].mpLink + "` is invalid. \nSet your new data by using the command `" + commandPrefix + "curmatch`.");
+							}
+							else {
+								var firstGame = 1;
+
+								async.each(multi.games, function(game){
+									async.series({
+										sendFirstMessage: function(callback) {
+											if(firstGame == 1) {
+												discord.sendMessage({
+													to: context.channelID,
+													message: "```diff\n+ " + results[0].t1Name + " vs. " + results[0].t2Name + "\n" +
+															"+ Referee: " + context.username + " \n\n" +
+
+															"Multiplayer link: https://osu.ppy.sh/mp/" + results[0].mpLink + "\n" +
+															"Multiplayer name: " + multi.match.name + "\n" +
+															"Room created on: " + multi.match.start_time + "```"
+												});
+
+												firstGame = 0;
+											}
+
+											callback();
+										},
+										beatmapName: function(callback) {
+											getBeatmapName(game.beatmap_id, function(bm){
+												var finalString = "",
+													modifier = 25;
+
+												// =============================================
+												// Set potential data in case it's not available
+												// =============================================
+												if (game.scores[0] === null) {
+													game.scores[0] = 80;
+													game.scores[0].count50 = 1;
+													game.scores[0].count100 = 1;
+													game.scores[0].count300 = 1;
+													game.scores[0].countmiss = 1;
+													game.scores[0].countkatu = 1;
+												}
+												if (game.scores[3] === null) {
+													game.scores[3] = 80;
+													game.scores[3].count50 = 1;
+													game.scores[3].count100 = 1;
+													game.scores[3].count300 = 1;
+													game.scores[3].countmiss = 1;
+													game.scores[3].countkatu = 1;
+												}
+												if (game.scores[1] === null) {
+													game.scores[1] = 1;
+													game.scores[1].count50 = 1;
+													game.scores[1].count100 = 1;
+													game.scores[1].count300 = 1;
+													game.scores[1].countmiss = 1;
+													game.scores[1].countkatu = 1;
+												}
+												if (game.scores[2] === null) {
+													game.scores[2] = 1;
+													game.scores[2].count50 = 1;
+													game.scores[2].count100 = 1;
+													game.scores[2].count300 = 1;
+													game.scores[2].countmiss = 1;
+													game.scores[2].countkatu = 1;
+												}
+												if (game.scores[4] === null) {
+													game.scores[4] = 1;
+													game.scores[4].count50 = 1;
+													game.scores[4].count100 = 1;
+													game.scores[4].count300 = 1;
+													game.scores[4].countmiss = 1;
+													game.scores[4].countkatu = 1;
+												}
+												if (game.scores[5] === null) {
+													game.scores[5] = 1;
+													game.scores[5].count50 = 1;
+													game.scores[5].count100 = 1;
+													game.scores[5].count300 = 1;
+													game.scores[5].countmiss = 1;
+													game.scores[5].countkatu = 1;
+												}
+
+												// =================
+												// Team one Accuracy
+												// =================
+												var teamOneAccuracyPlayer = game.scores[0],
+													teamOneAccTotalFruit = parseInt(teamOneAccuracyPlayer.count50) + parseInt(teamOneAccuracyPlayer.count100) + parseInt(teamOneAccuracyPlayer.count300) +
+														parseInt(teamOneAccuracyPlayer.countmiss) + parseInt(teamOneAccuracyPlayer.countkatu),
+													teamOneAccFruitCaught = parseInt(teamOneAccuracyPlayer.count50) + parseInt(teamOneAccuracyPlayer.count100) + parseInt(teamOneAccuracyPlayer.count300),
+													teamOneAccuracy = ((teamOneAccFruitCaught / teamOneAccTotalFruit) * 100).toFixed(2);
+
+												// ==================
+												// Team two Accuracy
+												// ==================
+												var teamTwoAccuracyPlayer = game.scores[3],
+													teamTwoAccTotalFruit = parseInt(teamTwoAccuracyPlayer.count50) + parseInt(teamTwoAccuracyPlayer.count100) + parseInt(teamTwoAccuracyPlayer.count300) +
+														parseInt(teamTwoAccuracyPlayer.countmiss) + parseInt(teamTwoAccuracyPlayer.countkatu),
+													teamTwoAccFruitCaught = parseInt(teamTwoAccuracyPlayer.count50) + parseInt(teamTwoAccuracyPlayer.count100) + parseInt(teamTwoAccuracyPlayer.count300),
+													teamTwoAccuracy = ((teamTwoAccFruitCaught / teamTwoAccTotalFruit) * 100).toFixed(2);
+
+												var teamOneFinalScore = Math.ceil((parseInt(game.scores[1].score) + parseInt(game.scores[2].score)) * Math.pow((teamOneAccuracy / 100), modifier));
+												var teamTwoFinalScore = Math.ceil((parseInt(game.scores[4].score) + parseInt(game.scores[5].score)) * Math.pow((teamOneAccuracy / 100), modifier));
+
+												if (teamOneFinalScore < teamTwoFinalScore) {
+													finalString = "+ " + results[0].t2Name + " has won. \n\n- " +
+																	results[0].t1Name + " score: " + addSpace(teamOneFinalScore) + "\n+ " +
+																	results[0].t2Name + " score: " + addSpace(teamTwoFinalScore) + "\n" +
+																	"* Score difference: " + addSpace(teamTwoFinalScore - teamOneFinalScore) + "\n\n" +
+																	results[0].t2Name + " has won. " + results[0].t1Name +
+																	" score: " + addSpace(teamOneFinalScore) + " | " +
+																	results[0].t2Name + " score: " + addSpace(teamTwoFinalScore) +
+																	". Score difference: " + addSpace(teamTwoFinalScore - teamOneFinalScore);
+												}
+												else {
+													finalString = "+ " + results[0].t1Name + " has won. \n\n+ " +
+																	results[0].t1Name + " score: " + addSpace(teamOneFinalScore) + "\n- " +
+																	results[0].t2Name + " score: " + addSpace(teamTwoFinalScore) + "\n" +
+																	"* Score difference: " + addSpace(teamOneFinalScore - teamTwoFinalScore) + "\n\n" +
+																	results[0].t1Name + " has won. " +
+																	results[0].t1Name + " score: " + addSpace(teamOneFinalScore) + " | " +
+																	results[0].t2Name + " score: " + addSpace(teamTwoFinalScore) +
+																	". Score difference: " + addSpace(teamOneFinalScore - teamTwoFinalScore);
+												}
+
+												setTimeout(function(artist, title, version){
+													discord.sendMessage({
+														to: context.channelID,
+														message: "```diff\n" + artist + " - " + title + " [" + version + "]" + "\n" + finalString + "```"
+													});
+												}, 1200 * times, bm.artist, bm.title, bm.version);
+
+												times ++;
+											});
+
+											callback();
+										}
+									});
+								}, function(err, results) {
+									if(err) console.log(err);
+									if(results) console.log(results);
+								});
+							}
+						// });
+					}
+					else {
+						amazejs.sendWrong(context.channelID, context.userID,
+							"You haven't set your multiplayer data yet. Use the command `" + commandPrefix + "curmatch` to continue.");
+					}
+				});
+
+				connection.release();
+			});
 		}
 	}
 };
 
+function addSpace(nStr) {
+    nStr += '';
+    x = nStr.split('.');
+    x1 = x[0];
+    x2 = x.length > 1 ? '.' + x[1] : '';
+    var rgx = /(\d+)(\d{3})/;
+    while (rgx.test(x1)) {
+        x1 = x1.replace(rgx, '$1' + ' ' + '$2');
+    }
+    return x1 + x2;
+}
 
 function isNumeric(n) {
   return !isNaN(parseFloat(n)) && isFinite(n);
+}
+
+function getMatchJSON(mp_id, callback) {
+    request({
+        url: "https://osu.ppy.sh/api/get_match?k=" + config.apiKeys.osu + "&mp=" + mp_id
+    }, function(error, response, body) {
+        if (!error && response.statusCode == 200) {
+            callback(JSON.parse(body));
+        } else {
+            console.error("Failed!");
+            callback([]);
+        }
+    });
+}
+
+function getBeatmapName(beatmapid, callback) {
+    request({
+        url: "https://osu.ppy.sh/api/get_beatmaps?k=" + config.apiKeys.osu + "&b=" + beatmapid
+    }, function(error, response, body) {
+        if (!error && response.statusCode == 200) {
+            callback(JSON.parse(body));
+        } else {
+            console.error("Failed!");
+            callback([]);
+        }
+    });
 }

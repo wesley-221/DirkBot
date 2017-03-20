@@ -1,3 +1,185 @@
+calculate: {
+	permission: "axs.host.calculate",
+	description: "This will calculate the scores of a multiplayer game with the AxS score system.",
+	usage: "calculate",
+	examples: ["calculate"],
+	func: function(argsm, context, reply) {
+		var serverID = discord.channels[context.channelID].guild_id;
+		var commandPrefix = amazejs.getCommandPrefix(serverID);
+
+		pool.getConnection(function(err, connection) {
+			if(err) console.log(err);
+
+			connection.query("SELECT * FROM calcUserData WHERE userID = ?", [context.userID], function(err, results) {
+				if(err) console.log(err);
+
+				if(Object.keys(results).length > 0) {
+					var resultArray = [];
+
+					// getMatchJSON(results[0].mpLink, function(multi) {
+						var multi = JSON.parse(fs.readFileSync("configfiles/testdata/data1.json"));
+
+						if(multi.match === 0) {
+							amazejs.sendWrong(context.channelID, context.userID,
+								"The multiplayer match `https://osu.ppy.sh/mp/" + results[0].mpLink + "` is invalid. \nSet your new data by using the command `" + commandPrefix + "curmatch`.");
+						}
+						else {
+							async.series([
+								function(callback) {
+									discord.sendMessage({
+										to: context.channelID,
+										message: "```" + results[0].t1Name + " vs. " + results[0].t2Name + "\n" +
+												"Referee: " + context.username + " \n\n" +
+
+												"Multiplayer link: https://osu.ppy.sh/mp/" + results[0].mpLink + "\n" +
+												"Multiplayer name: " + multi.match.name + "\n" +
+												"Room created on: " + multi.match.start_time + "```"
+									});
+
+									callback();
+								},
+								function(callback) {
+									for(var game in multi.games) {
+										async.waterfall([
+											function(step) {
+												var beatmapName = "";
+												getBeatmapName(multi.games[game].beatmap_id, function(beatmap) {
+													beatmapName = beatmap[0].artist + " - " + beatmap[0].title + " [" + beatmap[0].version + "]";
+													console.log(beatmapName);
+												});
+
+												step(null, beatmapName);
+											},
+											function(arg1, step) {
+												console.log("args1: " + arg1);
+												var modifier = 25; // change this depending on map
+
+												if (multi.games[game].scores[0] === null) {
+													multi.games[game].scores[0] = 80;
+													multi.games[game].scores[0].count50 = 1;
+													multi.games[game].scores[0].count100 = 1;
+													multi.games[game].scores[0].count300 = 1;
+													multi.games[game].scores[0].countmiss = 1;
+													multi.games[game].scores[0].countkatu = 1;
+												}
+												if (multi.games[game].scores[3] === null) {
+													multi.games[game].scores[3] = 80;
+													multi.games[game].scores[3].count50 = 1;
+													multi.games[game].scores[3].count100 = 1;
+													multi.games[game].scores[3].count300 = 1;
+													multi.games[game].scores[3].countmiss = 1;
+													multi.games[game].scores[3].countkatu = 1;
+												}
+												if (multi.games[game].scores[1] === null) {
+													multi.games[game].scores[1] = 1;
+													multi.games[game].scores[1].count50 = 1;
+													multi.games[game].scores[1].count100 = 1;
+													multi.games[game].scores[1].count300 = 1;
+													multi.games[game].scores[1].countmiss = 1;
+													multi.games[game].scores[1].countkatu = 1;
+												}
+												if (multi.games[game].scores[2] === null) {
+													multi.games[game].scores[2] = 1;
+													multi.games[game].scores[2].count50 = 1;
+													multi.games[game].scores[2].count100 = 1;
+													multi.games[game].scores[2].count300 = 1;
+													multi.games[game].scores[2].countmiss = 1;
+													multi.games[game].scores[2].countkatu = 1;
+												}
+												if (multi.games[game].scores[4] === null) {
+													multi.games[game].scores[4] = 1;
+													multi.games[game].scores[4].count50 = 1;
+													multi.games[game].scores[4].count100 = 1;
+													multi.games[game].scores[4].count300 = 1;
+													multi.games[game].scores[4].countmiss = 1;
+													multi.games[game].scores[4].countkatu = 1;
+												}
+												if (multi.games[game].scores[5] === null) {
+													multi.games[game].scores[5] = 1;
+													multi.games[game].scores[5].count50 = 1;
+													multi.games[game].scores[5].count100 = 1;
+													multi.games[game].scores[5].count300 = 1;
+													multi.games[game].scores[5].countmiss = 1;
+													multi.games[game].scores[5].countkatu = 1;
+												}
+
+												// =================
+												// Team one Accuracy
+												// =================
+												var teamOneAccuracyPlayer = multi.games[game].scores[0],
+													teamOneAccTotalFruit = parseInt(teamOneAccuracyPlayer.count50) + parseInt(teamOneAccuracyPlayer.count100) + parseInt(teamOneAccuracyPlayer.count300) +
+														parseInt(teamOneAccuracyPlayer.countmiss) + parseInt(teamOneAccuracyPlayer.countkatu),
+													teamOneAccFruitCaught = parseInt(teamOneAccuracyPlayer.count50) + parseInt(teamOneAccuracyPlayer.count100) + parseInt(teamOneAccuracyPlayer.count300),
+													teamOneAccuracy = ((teamOneAccFruitCaught / teamOneAccTotalFruit) * 100).toFixed(2);
+
+												// ==================
+												// Team two Accuracy
+												// ==================
+												var teamTwoAccuracyPlayer = multi.games[game].scores[3],
+													teamTwoAccTotalFruit = parseInt(teamTwoAccuracyPlayer.count50) + parseInt(teamTwoAccuracyPlayer.count100) + parseInt(teamTwoAccuracyPlayer.count300) +
+														parseInt(teamTwoAccuracyPlayer.countmiss) + parseInt(teamTwoAccuracyPlayer.countkatu),
+													teamTwoAccFruitCaught = parseInt(teamTwoAccuracyPlayer.count50) + parseInt(teamTwoAccuracyPlayer.count100) + parseInt(teamTwoAccuracyPlayer.count300),
+													teamTwoAccuracy = ((teamTwoAccFruitCaught / teamTwoAccTotalFruit) * 100).toFixed(2);
+
+												var teamOneFinalScore = Math.ceil((parseInt(multi.games[game].scores[1].score) + parseInt(multi.games[game].scores[2].score)) * Math.pow((teamOneAccuracy / 100), modifier));
+												var teamTwoFinalScore = Math.ceil((parseInt(multi.games[game].scores[4].score) + parseInt(multi.games[game].scores[5].score)) * Math.pow((teamOneAccuracy / 100), modifier));
+
+												if (teamOneFinalScore < teamTwoFinalScore) {
+													resultArray.push("Mapname: " + arg1 + "\n# " + results[0].t2Name + " has won. \n\n" +
+																	results[0].t1Name + " score: " + addSpace(teamOneFinalScore) + "\n" +
+																	results[0].t2Name + " score: " + addSpace(teamTwoFinalScore) + "\n" +
+																	"Score difference: " + addSpace(teamTwoFinalScore - teamOneFinalScore));
+												}
+												else {
+													resultArray.push("Mapname: " + arg1 + "\n# " + results[0].t1Name + " has won. \n\n" +
+																	results[0].t1Name + " score: " + addSpace(teamOneFinalScore) + "\n" +
+																	results[0].t2Name + " score: " + addSpace(teamTwoFinalScore) + "\n" +
+																	"Score difference: " + addSpace(teamOneFinalScore - teamTwoFinalScore));
+												}
+
+												step();
+											}
+										], function(err, result) {
+											if(err) console.log(err);
+											if(result) console.log(result);
+										});
+									}
+
+									callback();
+								},
+								function(callback) {
+									var times = 0;
+									async.each(resultArray, function(message) {
+										setTimeout(function() {
+											discord.sendMessage({
+												to: context.channelID,
+												message: "```md\n" + message + "```"
+											});
+										}, 1200 * times);
+
+										times++;
+									});
+
+									callback();
+								}
+							]);
+						}
+					// });
+				}
+				else {
+					amazejs.sendWrong(context.channelID, context.userID,
+						"You haven't set your multiplayer data yet. Use the command `" + commandPrefix + "curmatch` to continue.");
+				}
+			});
+
+			connection.release();
+		});
+	}
+}
+
+
+
+
 /*jshint -W041, -W083*/
 
 var fs = require("fs");

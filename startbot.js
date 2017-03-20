@@ -70,6 +70,25 @@ console.log();
 // ======================================
 // Command parsing
 // ======================================
+// (function(){
+// 	var _log = console.log;
+//
+// 	console.log = function(logMessage){
+// 		logMessage = "test" + logMessage;
+// 		_log.apply(console, arguments);
+// 	};
+// })();
+
+// console.test = (function(arg) {
+// 	console.log();
+// })();
+
+// console.test("hi");
+
+
+// ======================================
+// Command parsing
+// ======================================
 // checkBlacklistChannel() returns true when it's blacklisted and false if it's not
 function checkBlacklistChannel(userID, serverID, channelID, args) {
 	args = args.split(" ");
@@ -1127,6 +1146,7 @@ discord.on("ready", function() {
 			console.log(localDateString() + " | " + colors.green("[CONNECT]") + " Connected to the server: %s", discord.servers[i].name);
 		}
 
+		console.log(localDateString() + " | " + colors.red("REMINDER: The following AxS commands need to be only useable in the AxS server: \n") + localDateString() + " | " + colors.red("setmappool, reloadmappool, mappool, curmatch, calculate") + "");
 	    console.log(localDateString() + " | Logged in as %s, connected to %s servers. \n", discord.username, Object.keys(discord.servers).length);
 
 		discord.setPresence({
@@ -1277,6 +1297,10 @@ discord.on("any", function(event) {
 			}
 		}
 	}
+
+	event.on('speaking', function(userID, SSRC, speakingBool) {
+		console.log("%s is %s", userID, (speakingBool ? "speaking" : "done speaking") );
+	});
 });
 
 discord.on("disconnected", function() {

@@ -1,3 +1,4 @@
+/* jshint -W004 */
 // =======================================
 // Modules
 // =======================================
@@ -5,57 +6,13 @@ var Discord = require("discord.io");
 var fs = require("fs");
 var colors = require("colors");
 var mysql = require("mysql");
-var GoogleSpreadSheet = require('google-spreadsheet');
-var async = require('async');
 
 // ======================================
 // Global variables
 // ======================================
-var discord, config, pool, mappoolID,
+var discord, config, pool,
 	permission = {}, commands = {}, blackList = {}, commandPrefix = {}, welcomeServers = {},
-	dynamicCommands = {commands: {}, inline: {}},
-	mappoolData = {
-		'groupstage': {
-			'NoMod': [],
-			'Hidden': [],
-			'HardRock': [],
-			'DoubleTime': [],
-			'FreeMod': [],
-			'TieBreaker': []
-		},
-		'roundof8': {
-			'NoMod': [],
-			'Hidden': [],
-			'HardRock': [],
-			'DoubleTime': [],
-			'FreeMod': [],
-			'TieBreaker': []
-		},
-		'quarterfinals': {
-			'NoMod': [],
-			'Hidden': [],
-			'HardRock': [],
-			'DoubleTime': [],
-			'FreeMod': [],
-			'TieBreaker': []
-		},
-		'semifinals': {
-			'NoMod': [],
-			'Hidden': [],
-			'HardRock': [],
-			'DoubleTime': [],
-			'FreeMod': [],
-			'TieBreaker': []
-		},
-		'finals': {
-			'NoMod': [],
-			'Hidden': [],
-			'HardRock': [],
-			'DoubleTime': [],
-			'FreeMod': [],
-			'TieBreaker': []
-		}
-	};
+	dynamicCommands = {commands: {}, inline: {}}, highlights = {};
 
 console.log();
 console.log("                 ________   ___   ________   ___  __            ________   ________   _________   ");
@@ -70,33 +27,14 @@ console.log();
 // ======================================
 // Command parsing
 // ======================================
-// (function(){
-// 	var _log = console.log;
-//
-// 	console.log = function(logMessage){
-// 		logMessage = "test" + logMessage;
-// 		_log.apply(console, arguments);
-// 	};
-// })();
-
-// console.test = (function(arg) {
-// 	console.log();
-// })();
-
-// console.test("hi");
-
-
-// ======================================
-// Command parsing
-// ======================================
 // checkBlacklistChannel() returns true when it's blacklisted and false if it's not
 function checkBlacklistChannel(userID, serverID, channelID, args) {
 	args = args.split(" ");
 
 	if(blackList.hasOwnProperty("server" + serverID) &&
 		args[0] != getCommandPrefix(serverID) + "enable" && args[0] != getCommandPrefix(serverID) + "disable" &&
-		args[0] != getCommandPrefix(serverID) + "enablechannel" && args[0] != getCommandPrefix(serverID) + "disablechannel" /*&&
-		userID != config.ids.masterUser*/) {
+		args[0] != getCommandPrefix(serverID) + "enablechannel" && args[0] != getCommandPrefix(serverID) + "disablechannel" &&
+		userID != config.ids.masterUser) {
 		for(var j in blackList["server" + serverID].nocommandsinchannel) {
 			if(blackList["server" + serverID].nocommandsinchannel[j] == channelID)
 				return true;
@@ -120,23 +58,33 @@ function checkBlacklistCommand(serverID, args) {
 	return false;
 }
 
+// Parse the command
+function parseCommand(message, context) {
+    if (message.indexOf(" ") > 0) {
+        var f = message.indexOf(" ");
+        runCommand([message.substr(0, f), message.substr(f + 1)], context);
+    } else {
+        runCommand([message], context);
+    }
+}
+
+// Run the actual command
 function runCommand(args, context) {
     if (args.length < 1) return;
     if (commands[args[0]]) {
-        if (commands[args[0]].permission &&
-            !userHasPermission(context.userID, context.channelID, context.serverID, commands[args[0]].permission) &&
-			commands[args[0]].permission != "default") {
-				if(context.userID != config.ids.masterUser) {
-					var msg = ":no_entry: | You don't have permission to use this command.";
-					discord.sendMessage({
-						to: context.channelID,
-						message: msg
-					});
+        if (commands[args[0]].permission && !userHasPermission(context.userID, context.channelID, context.serverID, commands[args[0]].permission) && commands[args[0]].permission != "default" ||
+			(commands[args[0]].permission == "owner" && context.userID != config.ids.masterUser)) {
+			if(context.userID != config.ids.masterUser) {
+				var msg = ":no_entry: | You don't have permission to use this command.";
+				discord.sendMessage({
+					to: context.channelID,
+					message: msg
+				});
 
-					console.log(localDateString() + " | [COMMAND] " + context.username + " (" + context.userID + " @ " +
-	                    discord.servers[context.serverID].name + ") no permission for " + context.userID, args);
-	                return;
-				}
+				console.log(localDateString() + " | [COMMAND] " + context.username + " (" + context.userID + " @ " +
+                    discord.servers[context.serverID].name + ") no permission for " + context.userID, args);
+                return;
+			}
         }
 
         console.log(localDateString() + " | [COMMAND] " + context.username + " (" + context.userID + " @ " +
@@ -161,15 +109,7 @@ function runCommand(args, context) {
     }
 }
 
-function parseCommand(message, context) {
-    if (message.indexOf(" ") > 0) {
-        var f = message.indexOf(" ");
-        runCommand([message.substr(0, f), message.substr(f + 1)], context);
-    } else {
-        runCommand([message], context);
-    }
-}
-
+// Check the permissions when a user enters a command
 function userHasPermission(userID, channelID, serverID, permissionToSplit) {
     var userPerms = [];
 
@@ -219,7 +159,8 @@ function loadMySQL() {
 		password			: config.MySQL.password,
 		database			: config.MySQL.database,
 		supportBigNumbers 	: true,
-        bigNumberStrings 	: true
+        bigNumberStrings 	: true,
+		multipleStatements	: true
 	});
 
 	pool.getConnection(function(err, connection) {
@@ -230,20 +171,22 @@ function loadMySQL() {
 	});
 }
 
+// Initialize the config variable
 function loadConfig() {
     config = JSON.parse(fs.readFileSync("configfiles/config.json"));
     console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Config file has been loaded!");
 }
 
+// Initialize the welcomeServers variable
 function loadWelcomeChannels() {
 	pool.getConnection(function(err, connection) {
-		connection.query("SELECT * FROM welcomeInChannel", function(err, results) {
+		connection.query("SELECT * FROM wmtoggle", function(err, results) {
 			for(var i in results) {
 				if(welcomeServers.hasOwnProperty("server" + results[i].serverID))
-					welcomeServers["server" + results[i].serverID].channelID = results[i].channelID;
+					welcomeServers["server" + results[i].serverID]['channel' + results[i].channelID] = {'jtoggle': results[i].welcomeMessage, 'ltoggle': results[i].leaveMessage};
 				else {
 					welcomeServers["server" + results[i].serverID] = {};
-					welcomeServers["server" + results[i].serverID].channelID = results[i].channelID;
+					welcomeServers["server" + results[i].serverID]['channel' + results[i].channelID] = {'jtoggle': results[i].welcomeMessage, 'ltoggle': results[i].leaveMessage};
 				}
 			}
 
@@ -253,9 +196,10 @@ function loadWelcomeChannels() {
 	});
 }
 
+// Initialize the commandPrefix variable
 function loadCommandPrefix() {
 	pool.getConnection(function(err, connection) {
-		connection.query("SELECT * FROM commandPrefix", function(err, results) {
+		connection.query("SELECT * FROM commandprefix", function(err, results) {
 			for(var i in results) {
 				commandPrefix["server" + results[i].serverID] = results[i].commandPrefix;
 			}
@@ -266,19 +210,18 @@ function loadCommandPrefix() {
 	});
 }
 
+// Initialize the permission variable
 function loadPermissions() {
 	pool.getConnection(function(err, connection) {
 		connection.query('SELECT * FROM permission', function(err, results, fields) {
 			for(var i in results) {
 				if(!permission.hasOwnProperty("server" + results[i].serverID)) {
 					permission["server" + results[i].serverID] = {};
-					permission["server" + results[i].serverID]["user" + results[i].userID] = [];
-					permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+					permission["server" + results[i].serverID]["user" + results[i].userID] = [results[i].permissionName];
 				}
 				else {
 					if(!permission["server" + results[i].serverID].hasOwnProperty("user" + results[i].userID)) {
-						permission["server" + results[i].serverID]["user" + results[i].userID] = [];
-						permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
+						permission["server" + results[i].serverID]["user" + results[i].userID] = [results[i].permissionName];
 					}
 					else {
 						permission["server" + results[i].serverID]["user" + results[i].userID].push(results[i].permissionName);
@@ -292,9 +235,10 @@ function loadPermissions() {
 	});
 }
 
+// Initialize the blackList variable
 function loadBlacklist() {
 	pool.getConnection(function(err, connection) {
-		connection.query("SELECT * FROM blacklist", function(err, results, fields) {
+		connection.query("SELECT * FROM blacklist", function(err, results) {
 			for(var i in results) {
 				if(!blackList.hasOwnProperty("server" + results[i].serverID)) {
 					blackList["server" + results[i].serverID] = {"nocommandsinchannel": [], "disabledcommands": []};
@@ -320,6 +264,37 @@ function loadBlacklist() {
 	});
 }
 
+// Initialize the highlights variable
+function loadHighlights() {
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM highlightlist; SELECT * FROM highlights;", function(err, results) {
+			for(var i in results[0]) {
+				if(!highlights.hasOwnProperty('server' + results[0][i].serverID)) {
+					highlights["server" + results[0][i].serverID] = {'channels': [], 'keywords': []};
+					highlights["server" + results[0][i].serverID].channels.push(results[0][i].channelID);
+				}
+				else {
+					highlights["server" + results[0][i].serverID].channels.push(results[0][i].channelID);
+				}
+			}
+
+			for(var i in results[1]) {
+				if(!highlights.hasOwnProperty('server' + results[1][i].serverID)) {
+					highlights["server" + results[1][i].serverID] = {'channels': [], 'keywords': []};
+					highlights["server" + results[1][i].serverID].keywords.push(results[1][i].keyword);
+				}
+				else {
+					highlights["server" + results[1][i].serverID].keywords.push(results[1][i].keyword);
+				}
+			}
+
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    The highlights has been loaded!");
+			connection.release();
+		});
+	});
+}
+
+// Load a single plugin (commands)
 function loadPlugin(name, configObject) {
     var path = "./plugins/" + name + ".js";
 
@@ -349,6 +324,7 @@ function loadPlugin(name, configObject) {
     console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Loaded the plugin " + name + "!");
 }
 
+// Load _ALL_ plugins
 function loadPlugins() {
     console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Loading plugins...");
     var i, filename;
@@ -377,8 +353,11 @@ function loadPlugins() {
             }
         }
     });
+
+	console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Finished loading plugins.");
 }
 
+// Load all dynamic commands (both normal commands and inline)
 function loadDynamicCommands() {
 	pool.getConnection(function(err, connection) {
 		connection.query("SELECT * FROM commands", function(err, results) {
@@ -417,204 +396,6 @@ function loadDynamicCommands() {
 	});
 }
 
-function loadMappool() {
-	pool.getConnection(function(err, connection) {
-		connection.query("SELECT * FROM spreadsheetID", function(err, results) {
-			if(err) console.log(err);
-
-			for(var i in results) {
-				mappoolID = results[i].spreadsheetID;
-			}
-
-			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Succesfully loaded the mappoolID: " + mappoolID + "!");
-
-			var doc = new GoogleSpreadSheet(mappoolID),
-				simpleTitle = [],
-				showOnce = 0,
-				ignoreRows = [1, 2, 3, 10, 11, 16, 17, 22, 23, 28, 29, 34, 35],
-				noModRows = [4, 5, 6, 7, 8, 9],
-				hiddenRows = [12, 13, 14, 15],
-				hardRockRows = [18, 19, 20, 21],
-				doubleTimeRows = [24, 25, 26, 27],
-				freeModRows = [30, 31, 32, 33],
-				tiebreakerRow = [36];
-
-			doc.getInfo(function(err, info) {
-				async.each(info.worksheets, function(sheet, callback) {
-					var tempArrayNoMod 		= {'map': '', 'difficulty': '', 'modifier': ''},
-						tempArrayHidden 	= {'map': '', 'difficulty': '', 'modifier': ''},
-						tempArrayHardRock 	= {'map': '', 'difficulty': '', 'modifier': ''},
-						tempArrayDoubleTime = {'map': '', 'difficulty': '', 'modifier': ''},
-						tempArrayFreeMod 	= {'map': '', 'difficulty': '', 'modifier': ''},
-						tempArrayTiebreaker = {'map': '', 'difficulty': '', 'modifier': ''};
-
-					sheet.getCells({
-						'min-row': 1,
-						'return-empty': false
-					}, function(err, cells) {
-						async.each(cells, function(cell, step) {
-							// ===================
-							// Begin NoMod maps =
-							// ===================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (noModRows.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayNoMod.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayNoMod.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayNoMod.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayNoMod.map === '' || tempArrayNoMod.difficulty === '' || tempArrayNoMod.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].NoMod.push(tempArrayNoMod);
-									tempArrayNoMod = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							// ===================
-							// Begin Hidden maps =
-							// ===================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (hiddenRows.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayHidden.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayHidden.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayHidden.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayHidden.map === '' || tempArrayHidden.difficulty === '' || tempArrayHidden.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].Hidden.push(tempArrayHidden);
-									tempArrayHidden = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							// =====================
-							// Begin HardRock maps =
-							// =====================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (hardRockRows.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayHardRock.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayHardRock.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayHardRock.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayHardRock.map === '' || tempArrayHardRock.difficulty === '' || tempArrayHardRock.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].HardRock.push(tempArrayHardRock);
-									tempArrayHardRock = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							// =======================
-							// Begin DoubleTime maps =
-							// =======================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (doubleTimeRows.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayDoubleTime.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayDoubleTime.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayDoubleTime.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayDoubleTime.map === '' || tempArrayDoubleTime.difficulty === '' || tempArrayDoubleTime.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].DoubleTime.push(tempArrayDoubleTime);
-									tempArrayDoubleTime = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							// ====================
-							// Begin FreeMod maps =
-							// ====================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (freeModRows.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayFreeMod.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayFreeMod.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayFreeMod.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayFreeMod.map === '' || tempArrayFreeMod.difficulty === '' || tempArrayFreeMod.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].FreeMod.push(tempArrayFreeMod);
-									tempArrayFreeMod = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							// ======================
-							// Begin TieBreaker map =
-							// ======================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (tiebreakerRow.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayTiebreaker.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayTiebreaker.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayTiebreaker.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayTiebreaker.map === '' || tempArrayTiebreaker.difficulty === '' || tempArrayTiebreaker.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].TieBreaker.push(tempArrayTiebreaker);
-									tempArrayTiebreaker = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							step();
-						}, function(err) {
-							if(err) {
-								console.log(err);
-							}
-						});
-					});
-
-					callback();
-				}, function(err) {
-					if(err) {
-						console.log(err);
-					}
-					else {
-						console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Succesfully loaded the mappool with the id: " + mappoolID + "!");
-					}
-				});
-			});
-
-			connection.release();
-		});
-	});
-}
-
 // ==========================================
 // Reload functions
 // ==========================================
@@ -641,36 +422,6 @@ exports.reloadPermissions = function() {
 			}
 
 			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Permissions have been reloaded!");
-			connection.release();
-		});
-	});
-};
-
-exports.reloadBlacklist = function() {
-	blackList = {};
-
-	pool.getConnection(function(err, connection) {
-		connection.query("SELECT * FROM blacklist", function(err, results, fields) {
-			for(var i in results) {
-				if(!blackList.hasOwnProperty("server" + results[i].serverID)) {
-					blackList["server" + results[i].serverID] = {"nocommandsinchannel": [], "disabledcommands": []};
-
-					if(results[i].noCmdInChannel != "0")
-						blackList["server" + results[i].serverID].nocommandsinchannel.push(results[i].noCmdInChannel);
-
-					if(results[i].disabledCommand != "N/A")
-						blackList["server" + results[i].serverID].disabledcommands.push(results[i].disabledCommand);
-				}
-				else {
-					if(results[i].noCmdInChannel != "0")
-						blackList["server" + results[i].serverID].nocommandsinchannel.push(results[i].noCmdInChannel);
-
-					if(results[i].disabledCommand != "N/A")
-						blackList["server" + results[i].serverID].disabledcommands.push(results[i].disabledCommand);
-				}
-			}
-
-			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    The blacklist has been reloaded!");
 			connection.release();
 		});
 	});
@@ -756,17 +507,17 @@ exports.reloadWelcomeChannels = function() {
 	welcomeServers = {};
 
 	pool.getConnection(function(err, connection) {
-		connection.query("SELECT * FROM welcomeInChannel", function(err, results) {
+		connection.query("SELECT * FROM wmtoggle", function(err, results) {
 			for(var i in results) {
 				if(welcomeServers.hasOwnProperty("server" + results[i].serverID))
-					welcomeServers["server" + results[i].serverID].channelID = results[i].channelID;
+					welcomeServers["server" + results[i].serverID]['channel' + results[i].channelID] = {'jtoggle': results[i].welcomeMessage, 'ltoggle': results[i].leaveMessage};
 				else {
 					welcomeServers["server" + results[i].serverID] = {};
-					welcomeServers["server" + results[i].serverID].channelID = results[i].channelID;
+					welcomeServers["server" + results[i].serverID]['channel' + results[i].channelID] = {'jtoggle': results[i].welcomeMessage, 'ltoggle': results[i].leaveMessage};
 				}
 			}
 
-			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Reloaded all the Welcome Channels!");
+			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Loaded all the Welcome Channels!");
 			connection.release();
 		});
 	});
@@ -812,203 +563,6 @@ exports.reloadDynamicCommands = function() {
 	});
 };
 
-exports.reloadMappool = function(){
-	pool.getConnection(function(err, connection) {
-		connection.query("SELECT * FROM spreadsheetID", function(err, results) {
-			if(err) console.log(err);
-
-			for(var i in results) {
-				mappoolID = results[i].spreadsheetID;
-			}
-
-			console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Succesfully loaded the mappoolID: " + mappoolID + "!");
-
-			var doc = new GoogleSpreadSheet(mappoolID),
-				simpleTitle = [],
-				showOnce = 0,
-				ignoreRows = [1, 2, 3, 10, 11, 16, 17, 22, 23, 28, 29, 34, 35],
-				noModRows = [4, 5, 6, 7, 8, 9],
-				hiddenRows = [12, 13, 14, 15],
-				hardRockRows = [18, 19, 20, 21],
-				doubleTimeRows = [24, 25, 26, 27],
-				freeModRows = [30, 31, 32, 33],
-				tiebreakerRow = [36];
-
-			doc.getInfo(function(err, info) {
-				async.each(info.worksheets, function(sheet, callback) {
-					var tempArrayNoMod 		= {'map': '', 'difficulty': '', 'modifier': ''},
-						tempArrayHidden 	= {'map': '', 'difficulty': '', 'modifier': ''},
-						tempArrayHardRock 	= {'map': '', 'difficulty': '', 'modifier': ''},
-						tempArrayDoubleTime = {'map': '', 'difficulty': '', 'modifier': ''},
-						tempArrayFreeMod 	= {'map': '', 'difficulty': '', 'modifier': ''},
-						tempArrayTiebreaker = {'map': '', 'difficulty': '', 'modifier': ''};
-
-					sheet.getCells({
-						'min-row': 1,
-						'return-empty': false
-					}, function(err, cells) {
-						async.each(cells, function(cell, step) {
-							// ===================
-							// Begin NoMod maps =
-							// ===================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (noModRows.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayNoMod.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayNoMod.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayNoMod.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayNoMod.map === '' || tempArrayNoMod.difficulty === '' || tempArrayNoMod.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].NoMod.push(tempArrayNoMod);
-									tempArrayNoMod = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							// ===================
-							// Begin Hidden maps =
-							// ===================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (hiddenRows.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayHidden.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayHidden.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayHidden.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayHidden.map === '' || tempArrayHidden.difficulty === '' || tempArrayHidden.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].Hidden.push(tempArrayHidden);
-									tempArrayHidden = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							// =====================
-							// Begin HardRock maps =
-							// =====================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (hardRockRows.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayHardRock.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayHardRock.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayHardRock.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayHardRock.map === '' || tempArrayHardRock.difficulty === '' || tempArrayHardRock.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].HardRock.push(tempArrayHardRock);
-									tempArrayHardRock = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							// =======================
-							// Begin DoubleTime maps =
-							// =======================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (doubleTimeRows.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayDoubleTime.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayDoubleTime.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayDoubleTime.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayDoubleTime.map === '' || tempArrayDoubleTime.difficulty === '' || tempArrayDoubleTime.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].DoubleTime.push(tempArrayDoubleTime);
-									tempArrayDoubleTime = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							// ====================
-							// Begin FreeMod maps =
-							// ====================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (freeModRows.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayFreeMod.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayFreeMod.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayFreeMod.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayFreeMod.map === '' || tempArrayFreeMod.difficulty === '' || tempArrayFreeMod.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].FreeMod.push(tempArrayFreeMod);
-									tempArrayFreeMod = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							// ======================
-							// Begin TieBreaker map =
-							// ======================
-							if (ignoreRows.indexOf(cell.row) === -1) {
-								if (tiebreakerRow.indexOf(cell.row) >= 0) {
-									if(cell.col == 1) {
-										tempArrayTiebreaker.map = cell.value;
-									}
-									else if(cell.col == 2) {
-										tempArrayTiebreaker.difficulty = cell.value;
-									}
-									else if(cell.col == 3) {
-										tempArrayTiebreaker.modifier = cell.value;
-									}
-								}
-
-								if(tempArrayTiebreaker.map === '' || tempArrayTiebreaker.difficulty === '' || tempArrayTiebreaker.modifier === '') {}
-								else {
-									mappoolData[sheet.title.trim().replace(/ /g, "").toLowerCase()].TieBreaker.push(tempArrayTiebreaker);
-									tempArrayTiebreaker = {'map': '', 'difficulty': '', 'modifier': ''};
-								}
-							}
-
-							step();
-						}, function(err) {
-							if(err) {
-								console.log(err);
-							}
-						});
-					});
-
-					callback();
-				}, function(err) {
-					if(err) {
-						console.log(err);
-					}
-					else {
-						console.log(localDateString() + " | " + colors.green("[LOAD]") + "    Succesfully loaded the mappool with the id: " + mappoolID + "!");
-					}
-				});
-			});
-
-			connection.release();
-		});
-	});
-};
 // ======================================
 // Exports
 // ======================================
@@ -1018,6 +572,10 @@ exports.getMySQLConn = function() {
 
 exports.getBlacklist = function() {
 	return blackList;
+};
+
+exports.getHighlights = function() {
+	return highlights;
 };
 
 exports.getDynamicCommands = function() {
@@ -1038,10 +596,6 @@ exports.getConfig = function() {
 
 exports.getDiscord = function() {
 	return discord;
-};
-
-exports.getMappool = function() {
-	return mappoolData;
 };
 
 exports.setGame = function(gamename) {
@@ -1068,7 +622,6 @@ exports.getWelcomeChannels = function() {
 	return welcomeServers;
 };
 
-// returns a commandPrefix that has been set (if not > default prefix)
 exports.getCommandPrefix = function(serverID) {
 	if(!serverID)
 		return config.masterCommandPrefix;
@@ -1118,9 +671,31 @@ function localDateString () {
 	return curDate + " - " + curTime;
 }
 
+function logCommand(commandSplit, serverID, channelID, userID) {
+	var commandSplit = commandSplit.split(" "),
+		commandBlacklist = ['reload', 'eval', 'setgame'];
+
+	if(commandBlacklist.indexOf(commandSplit[0]) !== -1)
+		return;
+
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM commandstats WHERE serverID = ? AND channelID = ? AND userID = ? AND commandName = ?", [serverID, channelID, userID, commandSplit[0]], function(err, results) {
+			if(Object.keys(results).length > 0) {
+				connection.query("UPDATE commandstats SET commandCount = ? WHERE serverID = ? AND channelID = ? AND userID = ? AND commandName = ?", [(parseInt(results[0].commandCount) + 1), serverID, channelID, userID, commandSplit[0]], function(err) {});
+			}
+			else {
+				connection.query("INSERT INTO commandstats VALUES(?, ?, ?, ?, ?)", [serverID, channelID, userID, commandSplit[0], 1], function(err) {});
+			}
+
+			connection.release();
+		});
+	});
+}
+
 // ======================================
 // Start the bot
 // ======================================
+// These two need to be on top, usually are needed before everything else
 loadConfig();
 loadMySQL();
 
@@ -1128,11 +703,10 @@ loadMySQL();
 loadPermissions();
 loadPlugins();
 loadBlacklist();
+loadHighlights();
 loadCommandPrefix();
 loadWelcomeChannels();
 loadDynamicCommands();
-loadMappool();
-
 
 exports.discord = discord = new Discord.Client({
 	autorun: true,
@@ -1141,30 +715,44 @@ exports.discord = discord = new Discord.Client({
 
 
 discord.on("ready", function() {
-	setTimeout(function() {
-		for(var i in discord.servers) {
-			console.log(localDateString() + " | " + colors.green("[CONNECT]") + " Connected to the server: %s", discord.servers[i].name);
+	for(var i in discord.servers) {
+		console.log(localDateString() + " | " + colors.green("[CONNECT]") + " Connected to the server: %s", discord.servers[i].name);
+	}
+
+    console.log(localDateString() + " | Logged in as %s, connected to %s servers. \n", discord.username, Object.keys(discord.servers).length);
+
+	discord.setPresence({
+        game: {
+			"name": "Type !help for help"
 		}
-
-		console.log(localDateString() + " | " + colors.red("REMINDER: The following AxS commands need to be only useable in the AxS server: \n") + localDateString() + " | " + colors.red("setmappool, reloadmappool, mappool, curmatch, calculate") + "");
-	    console.log(localDateString() + " | Logged in as %s, connected to %s servers. \n", discord.username, Object.keys(discord.servers).length);
-
-		discord.setPresence({
-	        game: {
-				"name": "Type !help for help"
-			}
-	    });
-	}, 1000);
+    });
 });
 
 
 discord.on("message", function(username, userID, channelID, message, event) {
+	// Check if user sends a private message to the bot, if so ignore
 	if (channelID in discord.directMessages)
 		return;
 
-	var serverID = discord.channels[channelID].guild_id;
+	// Check if the user is the actual bot, if so ignore
 	if(userID == config.ids.botId)
 		return;
+
+	var serverID = discord.channels[channelID].guild_id;
+
+	// Whenever a user types a message insert/update it in the database
+	pool.getConnection(function(err, connection) {
+		connection.query("SELECT * FROM activeusers WHERE serverID = ? AND channelID = ? AND userID = ?", [serverID, channelID, userID], function(err, results) {
+			if(Object.keys(results).length > 0) {
+				connection.query("UPDATE activeusers SET messageCount = ? WHERE serverID = ? AND channelID = ? AND userID = ?", [(parseInt(results[0].messageCount) + 1), serverID, channelID, userID], function(err) {});
+			}
+			else {
+				connection.query("INSERT INTO activeusers VALUES(?, ?, ?, ?)", [serverID, channelID, userID, 1], function(err) {});
+			}
+
+			connection.release();
+		});
+	});
 
 	// help command works even when it is the config.masterCommandPrefix
 	if (message.indexOf(config.masterCommandPrefix) === 0 && message.substr(config.masterCommandPrefix.length) == "help") {
@@ -1172,9 +760,12 @@ discord.on("message", function(username, userID, channelID, message, event) {
             username: username,
             userID: userID,
             channelID: channelID,
-            serverID: serverID
+            serverID: serverID,
+			messageID: event.d.id,
+			commandPrefix: getCommandPrefix(serverID)
         });
 
+		logCommand(message.substr(config.masterCommandPrefix.length), serverID, channelID, userID);
 		return;
 	}
 
@@ -1190,6 +781,7 @@ discord.on("message", function(username, userID, channelID, message, event) {
 				}
 			});
 			console.log(localDateString() + " | [COMMAND] " + username + " (" + userID + " @ " + discord.servers[serverID].name + ") ran a command in a blacklisted channel.");
+			logCommand(message.substr(config.masterCommandPrefix.length), serverID, channelID, userID);
 			return;
 		}
 
@@ -1203,6 +795,7 @@ discord.on("message", function(username, userID, channelID, message, event) {
 				}
 			});
 			console.log(localDateString() + " | [COMMAND] " + username + " (" + userID + " @ " + discord.servers[serverID].name + ") ran a blacklisted command.");
+			logCommand(message.substr(config.masterCommandPrefix.length), serverID, channelID, userID);
 			return;
 		}
 
@@ -1211,9 +804,14 @@ discord.on("message", function(username, userID, channelID, message, event) {
             username: username,
             userID: userID,
             channelID: channelID,
-            serverID: serverID
+            serverID: serverID,
+			messageID: event.d.id,
+			commandPrefix: getCommandPrefix(serverID)
         });
 
+		logCommand(message.substr(config.masterCommandPrefix.length), serverID, channelID, userID);
+
+		// Run the dynamic command
 		if(dynamicCommands.commands.hasOwnProperty("server" + serverID)) {
 			for(var cmd in dynamicCommands.commands["server" + serverID]) {
 				var commandSplit = message.split(" ");
@@ -1231,6 +829,7 @@ discord.on("message", function(username, userID, channelID, message, event) {
 		}
     }
 	else {
+		// Run an inline command
 		if(dynamicCommands.inline.hasOwnProperty("server" + serverID)) {
 			for(var inl in dynamicCommands.inline["server" + serverID]) {
 				if(message.toLowerCase().includes(dynamicCommands.inline["server" + serverID][inl].commandName)) {
@@ -1282,28 +881,37 @@ discord.on("message", function(username, userID, channelID, message, event) {
 });
 
 discord.on("any", function(event) {
-	// User has joined a server
-	if(event.t == "GUILD_MEMBER_ADD") {
-		for(var i in event.d) {
-			if(event.d[i].hasOwnProperty("id")) {
-				if(welcomeServers.hasOwnProperty("server" + event.d.guild_id)) {
+	// A user has left a server, send a message to the given channel if assigned to do so
+	if(event.t == "GUILD_MEMBER_REMOVE") {
+		if(welcomeServers.hasOwnProperty("server" + event.d.guild_id)) {
+			for(var i in welcomeServers['server' + event.d.guild_id]) {
+				if(welcomeServers['server' + event.d.guild_id][i].ltoggle == 1) {
 					discord.sendMessage({
-						to: welcomeServers["server" + event.d.guild_id].channelID,
-						message: "Welcome <@" + event.d[i].id + ">!"
+						to: i.replace('channel', ''),
+						message: '**' + event.d.user.username + '** has left the server.'
 					});
 				}
-
-				console.log(localDateString() + " | [JOIN] Member " + event.d[i].username + " has joined the server: " + discord.servers[event.d.guild_id].name + ". ");
 			}
 		}
 	}
 
-	event.on('speaking', function(userID, SSRC, speakingBool) {
-		console.log("%s is %s", userID, (speakingBool ? "speaking" : "done speaking") );
-	});
+	// A user has joined a server, send a message to the given channel if assigned to do so
+	if(event.t == "GUILD_MEMBER_ADD") {
+		if(welcomeServers.hasOwnProperty("server" + event.d.guild_id)) {
+			for(var i in welcomeServers['server' + event.d.guild_id]) {
+				if(welcomeServers['server' + event.d.guild_id][i].jtoggle == 1) {
+					discord.sendMessage({
+						to: i.replace('channel', ''),
+						message: '<@' + event.d.user.id + '> has joined the server.'
+					});
+				}
+			}
+		}
+	}
 });
 
-discord.on("disconnected", function() {
-    console.log("Connection lost! Reconnecting in 3 seconds");
+// Disconnect handler, reconnect in 3 seconds
+discord.on("disconnect", function(err, event) {
+    console.log(localDateString() + colors.red(" | [DISCONNECT] Connection lost, Code: " + event + ", " + err + ". Reconnecting in 3 seconds. "));
     setTimeout(discord.connect, 3000);
 });

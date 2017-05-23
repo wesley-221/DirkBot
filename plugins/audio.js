@@ -1,4 +1,4 @@
-/*jshint -W041, -W083, -W100*/
+/*jshint -W041, -W083, -W100, esversion: 6*/
 
 var fs = require("fs");
 var jsonfile = require('jsonfile');
@@ -281,6 +281,8 @@ exports.commands = {
 			ytSource["server" + serverID].on('data', function(x) {
 				ytSource["server" + serverID].destroy();
 			});
+
+			// TODO: Make the music stop, it's not emptying the stream yet
 
 
 			// discord.getAudioContext(botVoiceChannel, function(error, stream) {

@@ -8,6 +8,7 @@ This file should contain the following information:
 
 ```javascript
 {
+	"version": "0.6.2",
 	"botToken": "",
 	"ids": {
 		"botId": "189393959577976833",
@@ -37,7 +38,6 @@ This file should contain the following information:
 `ids.AxSServer`: The official AxS server id is `121334952016084992`, feel free to change this to any of your own servers if you want to run the commands in there
 
 `ids.masterUser`: The id of the master user (usually yourself), this is used to bypass certain things
-
 
 `apiKeys.youtube`: The api key for youtube, get a key from here: <https://console.developers.google.com/>
 

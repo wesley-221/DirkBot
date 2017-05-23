@@ -1,11 +1,11 @@
 {
   "name": "dirkbot",
   "version": "2.0.0",
-  "description": "This is a bot developed by Wesley ",
+  "description": "Bot",
   "main": "startbot.js",
   "repository": {
-    "type": "git",
-    "url": "git+https://github.com/wesleyalkemade/DirkBot.git"
+    "type": "",
+    "url": ""
   },
   "keywords": [
     "discord.io",
@@ -15,7 +15,10 @@
   "author": "Wesley Alkemade",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/wesleyalkemade/DirkBot/issues"
+    "url": ""
   },
-  "homepage": "https://github.com/wesleyalkemade/DirkBot#readme"
+  "homepage": "",
+  "dependencies": {
+    "request-promise": "^4.2.0"
+  }
 }
